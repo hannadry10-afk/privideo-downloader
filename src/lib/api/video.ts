@@ -13,10 +13,21 @@ export interface VideoMetadata {
   keywords?: string;
 }
 
+export interface VideoSource {
+  url: string;
+  quality?: string;
+  format?: string;
+  size?: string;
+  type?: string;
+}
+
 export interface PickerItem {
   type: string;
   url: string;
   thumb?: string;
+  quality?: string;
+  format?: string;
+  size?: string;
 }
 
 export interface VideoResult {
@@ -28,7 +39,7 @@ export interface VideoResult {
   audio?: string;
   error?: string;
   metadata?: VideoMetadata;
-  data?: any;
+  videoSources?: VideoSource[];
 }
 
 export async function fetchVideo(url: string): Promise<VideoResult> {

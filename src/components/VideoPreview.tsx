@@ -1,6 +1,6 @@
-import { Download, ExternalLink, Film, Clock, Globe, User, Monitor } from 'lucide-react';
+import { Download, ExternalLink, Film, Clock, Globe, User, Monitor, HardDrive, FileVideo } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import type { VideoResult } from '@/lib/api/video';
+import type { VideoResult, VideoSource } from '@/lib/api/video';
 
 interface VideoPreviewProps {
   result: VideoResult;
@@ -9,9 +9,51 @@ interface VideoPreviewProps {
 const VideoPreview = ({ result }: VideoPreviewProps) => {
   const metadata = result.metadata;
 
-  const handleDownload = (url: string) => {
-    window.open(url, '_blank');
+  const forceDownload = (url: string, filename?: string) => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    if (filename) a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
+
+  const renderSourceLabel = (item: { quality?: string; format?: string; size?: string }, i: number) => {
+    const parts: string[] = [];
+    if (item.quality) parts.push(item.quality);
+    if (item.format) parts.push(item.format.toUpperCase());
+    if (item.size) parts.push(item.size);
+    return parts.length > 0 ? parts.join(' · ') : `Video ${i + 1}`;
+  };
+
+  // Merge picker items and videoSources for a unified download list
+  const allSources: { url: string; label: string; isAudio?: boolean }[] = [];
+
+  if (result.type === 'direct' && result.url) {
+    allSources.push({ url: result.url, label: result.filename || 'Download Video' });
+  }
+
+  if (result.picker) {
+    result.picker.forEach((item, i) => {
+      allSources.push({ url: item.url, label: renderSourceLabel(item, i) });
+    });
+  }
+
+  if (result.audio) {
+    allSources.push({ url: result.audio, label: 'Audio Only', isAudio: true });
+  }
+
+  // Add scraped video sources not already present
+  if (result.videoSources) {
+    const existingUrls = new Set(allSources.map(s => s.url));
+    result.videoSources.forEach((src, i) => {
+      if (!existingUrls.has(src.url)) {
+        allSources.push({ url: src.url, label: renderSourceLabel(src, i) });
+      }
+    });
+  }
 
   return (
     <div className="w-full max-w-2xl mx-auto mt-8">
@@ -75,76 +117,64 @@ const VideoPreview = ({ result }: VideoPreviewProps) => {
                   {metadata.description}
                 </p>
               )}
-
-              {/* Metadata badges */}
-              <div className="flex flex-wrap gap-2">
-                {metadata.type && (
-                  <span className="rounded-lg bg-secondary px-3 py-1 text-xs text-secondary-foreground">
-                    {metadata.type}
-                  </span>
-                )}
-              </div>
             </>
           )}
 
-          {/* Download options */}
-          {result.success && result.type === 'direct' && result.url && (
-            <Button
-              onClick={() => handleDownload(result.url!)}
-              className="w-full h-12 bg-primary text-primary-foreground font-semibold text-base hover:bg-primary/90 rounded-xl"
-            >
-              <Download className="h-5 w-5 mr-2" />
-              Download {result.filename ? `— ${result.filename}` : 'Video'}
-            </Button>
-          )}
-
-          {result.success && result.type === 'picker' && result.picker && (
+          {/* Download section */}
+          {result.success && allSources.length > 0 && (
             <div className="space-y-2">
-              <p className="text-sm font-medium text-muted-foreground">Available downloads:</p>
+              {allSources.length > 1 && (
+                <p className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                  <FileVideo className="h-4 w-4" />
+                  {allSources.length} download options found
+                </p>
+              )}
               <div className="grid gap-2">
-                {result.picker.map((item, i) => (
+                {allSources.map((source, i) => (
                   <Button
                     key={i}
-                    variant="secondary"
-                    onClick={() => handleDownload(item.url)}
-                    className="w-full justify-between h-11 rounded-xl"
+                    variant={i === 0 ? 'default' : 'secondary'}
+                    onClick={() => forceDownload(source.url)}
+                    className={`w-full justify-between h-12 rounded-xl ${i === 0 ? 'bg-primary text-primary-foreground font-semibold' : ''}`}
                   >
-                    <span className="flex items-center gap-2">
-                      <Download className="h-4 w-4" />
-                      {item.type === 'video' ? 'Video' : 'Photo'} {i + 1}
+                    <span className="flex items-center gap-2 truncate">
+                      <Download className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{source.label}</span>
                     </span>
-                    <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex items-center gap-2 shrink-0">
+                      {source.isAudio && (
+                        <span className="text-xs opacity-70">🎵</span>
+                      )}
+                      <ExternalLink className="h-4 w-4 opacity-60" />
+                    </div>
                   </Button>
                 ))}
-                {result.audio && (
-                  <Button
-                    variant="secondary"
-                    onClick={() => handleDownload(result.audio!)}
-                    className="w-full justify-between h-11 rounded-xl"
-                  >
-                    <span className="flex items-center gap-2">
-                      <Download className="h-4 w-4" />
-                      Audio Only
-                    </span>
-                    <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                  </Button>
-                )}
               </div>
             </div>
           )}
 
-          {result.success && result.type === 'metadata_only' && (
+          {result.success && allSources.length === 0 && (
             <div className="rounded-xl bg-secondary/50 border border-border p-4 text-sm text-muted-foreground">
-              ℹ️ Video metadata fetched successfully. Direct download may not be available for this platform — try right-clicking the video on the original page.
+              <p className="flex items-center gap-2">
+                <HardDrive className="h-4 w-4" />
+                Video metadata retrieved. No direct download links were found — the platform may use DRM or require authentication.
+              </p>
+              {metadata?.videoUrl && (
+                <Button
+                  variant="secondary"
+                  className="mt-3 w-full rounded-xl"
+                  onClick={() => forceDownload(metadata.videoUrl!)}
+                >
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Try OG Video URL
+                </Button>
+              )}
             </div>
           )}
 
           {!result.success && (
             <div className="rounded-xl bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
               {result.error || 'Could not process this video. The platform may not be supported.'}
-              {metadata && metadata.title !== 'Unknown' && (
-                <p className="mt-2 text-muted-foreground">However, we were able to retrieve the video metadata above.</p>
-              )}
             </div>
           )}
         </div>
