@@ -1,0 +1,4 @@
+project_id = "agpugffrbakpmjoyvdcr"
+
+[functions.fetch-video]
+verify_jwt = false
