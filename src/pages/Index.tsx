@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Download, Zap } from 'lucide-react';
 import UrlInput from '@/components/UrlInput';
 import VideoPreview from '@/components/VideoPreview';
+import VideoSkeleton from '@/components/VideoSkeleton';
 import { fetchVideo, type VideoResult } from '@/lib/api/video';
 import { useToast } from '@/hooks/use-toast';
 
@@ -66,7 +67,8 @@ const Index = () => {
         <UrlInput onSubmit={handleFetch} isLoading={isLoading} />
 
         {/* Result */}
-        {result && <VideoPreview result={result} />}
+        {isLoading && <VideoSkeleton />}
+        {!isLoading && result && <VideoPreview result={result} />}
 
         {/* Features */}
         {!result && (
