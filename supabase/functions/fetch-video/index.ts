@@ -12,93 +12,40 @@ serve(async (req) => {
 
   try {
     const { url } = await req.json();
-
     if (!url) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'URL is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return jsonResponse({ success: false, error: 'URL is required' }, 400);
     }
 
     console.log('Processing video URL:', url);
 
-    // Fetch page HTML for metadata + video source extraction
-    const pageData = await fetchPageData(url);
+    // Fetch page with multiple user-agent strategies
+    const pageData = await fetchPageDataWithRetry(url);
 
-    // Try cobalt API first
-    try {
-      const cobaltResponse = await fetch('https://api.cobalt.tools/', {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          url: url,
-          downloadMode: 'auto',
-          filenameStyle: 'pretty',
-        }),
-      });
+    // Try cobalt API first (supports many platforms)
+    const cobaltResult = await tryCobalt(url, pageData);
+    if (cobaltResult) return jsonResponse(cobaltResult);
 
-      if (cobaltResponse.ok) {
-        const cobaltData = await cobaltResponse.json();
-        console.log('Cobalt status:', cobaltData.status);
-
-        if (cobaltData.status === 'picker') {
-          return jsonResponse({
-            success: true,
-            type: 'picker',
-            audio: cobaltData.audio,
-            picker: cobaltData.picker,
-            metadata: pageData.metadata,
-            videoSources: pageData.videoSources,
-          });
-        }
-
-        if (cobaltData.status === 'redirect' || cobaltData.status === 'tunnel') {
-          return jsonResponse({
-            success: true,
-            type: 'direct',
-            url: cobaltData.url,
-            filename: cobaltData.filename,
-            metadata: pageData.metadata,
-            videoSources: pageData.videoSources,
-          });
-        }
-      }
-    } catch (e) {
-      console.log('Cobalt API not available, falling back to scraping');
+    // Try Invidious for YouTube
+    if (isYouTube(url)) {
+      const invResult = await tryInvidious(url, pageData);
+      if (invResult) return jsonResponse(invResult);
     }
 
-    // If cobalt fails, check if we found video sources from scraping
+    // If we found video sources from scraping, verify and return
     if (pageData.videoSources.length > 0) {
-      // Verify which sources are actually accessible
-      const verifiedSources = await verifyVideoSources(pageData.videoSources);
-
-      if (verifiedSources.length > 0) {
-        if (verifiedSources.length === 1) {
-          return jsonResponse({
-            success: true,
-            type: 'direct',
-            url: verifiedSources[0].url,
-            filename: generateFilename(pageData.metadata.title, verifiedSources[0]),
-            metadata: pageData.metadata,
-            videoSources: verifiedSources,
-          });
-        }
+      const verified = await verifyVideoSources(pageData.videoSources);
+      if (verified.length > 0) {
         return jsonResponse({
           success: true,
-          type: 'picker',
-          picker: verifiedSources.map(s => ({
-            type: 'video',
-            url: s.url,
-            thumb: pageData.metadata.thumbnail,
-            quality: s.quality,
-            format: s.format,
-            size: s.size,
-          })),
+          type: verified.length === 1 ? 'direct' : 'picker',
+          url: verified.length === 1 ? verified[0].url : undefined,
+          filename: verified.length === 1 ? generateFilename(pageData.metadata.title, verified[0]) : undefined,
+          picker: verified.length > 1 ? verified.map((s, i) => ({
+            type: 'video', url: s.url, thumb: pageData.metadata.thumbnail,
+            quality: s.quality, format: s.format, size: s.size,
+          })) : undefined,
           metadata: pageData.metadata,
-          videoSources: verifiedSources,
+          videoSources: verified,
         });
       }
     }
@@ -113,17 +60,21 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Error processing video:', error);
-    return new Response(
-      JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Failed to process video' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return jsonResponse({ success: false, error: error instanceof Error ? error.message : 'Failed to process video' }, 500);
   }
 });
 
-function jsonResponse(data: unknown) {
+// ── Helpers ──
+
+function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
+    status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
+}
+
+function isYouTube(url: string): boolean {
+  return /(?:youtube\.com|youtu\.be|youtube-nocookie\.com)/i.test(url);
 }
 
 function generateFilename(title: string, source: VideoSource): string {
@@ -141,81 +92,147 @@ interface VideoSource {
   type?: string;
 }
 
-async function verifyVideoSources(sources: VideoSource[]): Promise<VideoSource[]> {
-  const verified: VideoSource[] = [];
+// ── Cobalt ──
 
-  for (const source of sources.slice(0, 10)) {
+async function tryCobalt(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch('https://api.cobalt.tools/', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, downloadMode: 'auto', filenameStyle: 'pretty' }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    console.log('Cobalt status:', data.status);
+
+    if (data.status === 'picker') {
+      return { success: true, type: 'picker', audio: data.audio, picker: data.picker, metadata: pageData.metadata, videoSources: pageData.videoSources };
+    }
+    if (data.status === 'redirect' || data.status === 'tunnel') {
+      return { success: true, type: 'direct', url: data.url, filename: data.filename, metadata: pageData.metadata, videoSources: pageData.videoSources };
+    }
+  } catch (e) {
+    console.log('Cobalt unavailable:', e);
+  }
+  return null;
+}
+
+// ── Invidious (YouTube) ──
+
+const INVIDIOUS_INSTANCES = [
+  'https://inv.tux.pizza',
+  'https://invidious.fdn.fr',
+  'https://vid.puffyan.us',
+  'https://invidious.nerdvpn.de',
+];
+
+async function tryInvidious(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  const videoId = extractYouTubeId(url);
+  if (!videoId) return null;
+
+  for (const instance of INVIDIOUS_INSTANCES) {
     try {
-      const res = await fetch(source.url, { method: 'HEAD', redirect: 'follow' });
-      if (res.ok) {
-        const contentType = res.headers.get('content-type') || '';
-        const contentLength = res.headers.get('content-length');
-        if (contentType.includes('video') || contentType.includes('octet-stream') || contentType.includes('mp4') || contentType.includes('webm')) {
-          verified.push({
-            ...source,
-            size: contentLength ? formatBytes(parseInt(contentLength)) : source.size,
-            format: source.format || guessFormat(contentType, source.url),
-          });
+      const res = await fetch(`${instance}/api/v1/videos/${videoId}?fields=formatStreams,adaptiveFormats,title,videoThumbnails,lengthSeconds,author`, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+
+      const sources: VideoSource[] = [];
+      // Format streams (combined audio+video)
+      for (const f of data.formatStreams || []) {
+        if (f.url) {
+          sources.push({ url: f.url, quality: f.qualityLabel || f.quality, format: f.container || 'mp4', type: 'combined' });
         }
       }
+      // Adaptive formats (video only, usually higher quality)
+      for (const f of data.adaptiveFormats || []) {
+        if (f.url && f.type?.startsWith('video/')) {
+          sources.push({ url: f.url, quality: f.qualityLabel || f.quality, format: f.container || 'mp4', type: 'video' });
+        }
+      }
+
+      if (sources.length > 0) {
+        const thumb = data.videoThumbnails?.find((t: any) => t.quality === 'maxresdefault')?.url || data.videoThumbnails?.[0]?.url || pageData.metadata.thumbnail;
+        const meta = { ...pageData.metadata, title: data.title || pageData.metadata.title, thumbnail: thumb, author: data.author || pageData.metadata.author, duration: data.lengthSeconds?.toString() || pageData.metadata.duration };
+
+        return {
+          success: true,
+          type: sources.length === 1 ? 'direct' : 'picker',
+          url: sources.length === 1 ? sources[0].url : undefined,
+          filename: sources.length === 1 ? generateFilename(meta.title, sources[0]) : undefined,
+          picker: sources.length > 1 ? sources.map(s => ({ type: 'video', url: s.url, thumb, quality: s.quality, format: s.format, size: s.size })) : undefined,
+          metadata: meta,
+          videoSources: sources,
+        };
+      }
     } catch {
-      // skip unreachable
+      continue;
     }
   }
-  return verified;
+  return null;
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-  return (bytes / 1048576).toFixed(1) + ' MB';
+function extractYouTubeId(url: string): string | null {
+  const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?.*v=|embed\/|v\/|shorts\/))([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
 }
 
-function guessFormat(contentType: string, url: string): string {
-  if (contentType.includes('mp4') || url.includes('.mp4')) return 'mp4';
-  if (contentType.includes('webm') || url.includes('.webm')) return 'webm';
-  if (contentType.includes('ogg') || url.includes('.ogg')) return 'ogg';
-  if (contentType.includes('avi') || url.includes('.avi')) return 'avi';
-  if (contentType.includes('mov') || url.includes('.mov')) return 'mov';
-  return 'mp4';
+// ── Page fetching with retry / multiple user agents ──
+
+interface PageData {
+  metadata: Record<string, string>;
+  videoSources: VideoSource[];
 }
 
-async function fetchPageData(url: string): Promise<{ metadata: Record<string, string>; videoSources: VideoSource[] }> {
-  const defaultMeta = {
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+  'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+];
+
+async function fetchPageDataWithRetry(url: string): Promise<PageData> {
+  const defaultMeta: Record<string, string> = {
     title: 'Unknown', description: '', thumbnail: '', duration: '',
     siteName: new URL(url).hostname, type: 'video', videoUrl: '',
     resolution: '', author: '', keywords: '',
   };
 
-  try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-      },
-      redirect: 'follow',
-    });
-    const html = await response.text();
+  for (const ua of USER_AGENTS) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': ua,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+        },
+        redirect: 'follow',
+      });
+      const html = await response.text();
+      const metadata = extractMetadata(html, url);
+      const videoSources = extractVideoSources(html, url);
 
-    const metadata = extractMetadata(html, url);
-    const videoSources = extractVideoSources(html, url);
-
-    return { metadata, videoSources };
-  } catch {
-    return { metadata: defaultMeta, videoSources: [] };
+      if (videoSources.length > 0 || metadata.title !== 'Unknown') {
+        return { metadata, videoSources };
+      }
+    } catch {
+      continue;
+    }
   }
+  return { metadata: defaultMeta, videoSources: [] };
 }
+
+// ── Metadata extraction ──
 
 function extractMetadata(html: string, url: string): Record<string, string> {
   const getMetaContent = (property: string): string => {
     const r1 = new RegExp(`<meta[^>]*(?:property|name)=["']${property}["'][^>]*content=["']([^"']*)["']`, 'i');
     const r2 = new RegExp(`<meta[^>]*content=["']([^"']*)["'][^>]*(?:property|name)=["']${property}["']`, 'i');
-    const match = html.match(r1) || html.match(r2);
-    return match ? match[1] : '';
+    return (html.match(r1) || html.match(r2))?.[1] || '';
   };
 
   const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
@@ -237,12 +254,14 @@ function extractMetadata(html: string, url: string): Record<string, string> {
   };
 }
 
+// ── Video source extraction (enhanced) ──
+
 function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
   const sources: VideoSource[] = [];
   const seenUrls = new Set<string>();
 
   const addSource = (rawUrl: string, quality?: string, format?: string) => {
-    if (!rawUrl || rawUrl.startsWith('data:') || rawUrl.startsWith('blob:')) return;
+    if (!rawUrl || rawUrl.startsWith('data:') || rawUrl.startsWith('blob:') || rawUrl.length < 10) return;
     try {
       const resolved = rawUrl.startsWith('http') ? rawUrl : new URL(rawUrl, pageUrl).href;
       if (seenUrls.has(resolved)) return;
@@ -251,16 +270,33 @@ function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
     } catch { /* invalid URL */ }
   };
 
-  // 1. <video> tag src
-  const videoSrcRegex = /<video[^>]*\ssrc=["']([^"']+)["']/gi;
   let m;
-  while ((m = videoSrcRegex.exec(html)) !== null) addSource(m[1]);
 
-  // 2. <source> inside <video>
+  // 1. <video> tag src + poster
+  const videoTagRegex = /<video[^>]*>/gi;
+  while ((m = videoTagRegex.exec(html)) !== null) {
+    const tag = m[0];
+    const srcMatch = tag.match(/\ssrc=["']([^"']+)["']/i);
+    if (srcMatch) addSource(srcMatch[1]);
+    // data-src (lazy loaded)
+    const dataSrcMatch = tag.match(/\sdata-src=["']([^"']+)["']/i);
+    if (dataSrcMatch) addSource(dataSrcMatch[1]);
+    // data-video-src
+    const dataVideoSrc = tag.match(/\sdata-video-src=["']([^"']+)["']/i);
+    if (dataVideoSrc) addSource(dataVideoSrc[1]);
+  }
+
+  // 2. <source> tags (inside or outside video elements)
   const sourceRegex = /<source[^>]*\ssrc=["']([^"']+)["'][^>]*(?:type=["']([^"']*)["'])?/gi;
   while ((m = sourceRegex.exec(html)) !== null) {
     const fmt = m[2]?.split('/')[1]?.split(';')[0];
     addSource(m[1], undefined, fmt);
+  }
+  // Reverse attribute order
+  const sourceAlt = /<source[^>]*(?:type=["']([^"']*)["'])[^>]*\ssrc=["']([^"']+)["']/gi;
+  while ((m = sourceAlt.exec(html)) !== null) {
+    const fmt = m[1]?.split('/')[1]?.split(';')[0];
+    addSource(m[2], undefined, fmt);
   }
 
   // 3. OG video meta tags
@@ -270,43 +306,129 @@ function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
   while ((m = ogVideoAlt.exec(html)) !== null) addSource(m[1]);
 
   // 4. Twitter player stream
-  const twitterStream = /<meta[^>]*(?:property|name)=["']twitter:player:stream["'][^>]*content=["']([^"']+)["']/i;
-  const tw = html.match(twitterStream);
+  const tw = html.match(/<meta[^>]*(?:property|name)=["']twitter:player:stream["'][^>]*content=["']([^"']+)["']/i);
   if (tw) addSource(tw[1]);
 
-  // 5. Direct .mp4/.webm/.mov links in HTML
-  const directLinkRegex = /["'](https?:\/\/[^"'\s]+\.(?:mp4|webm|mov|m4v|avi|mkv)(?:\?[^"'\s]*)?)["']/gi;
+  // 5. Direct video file URLs anywhere in HTML
+  const directLinkRegex = /["'](https?:\/\/[^"'\s<>]+\.(?:mp4|webm|mov|m4v|avi|mkv|flv|wmv|3gp|ogv)(?:\?[^"'\s<>]*)?)["']/gi;
   while ((m = directLinkRegex.exec(html)) !== null) addSource(m[1]);
 
-  // 6. JSON-LD contentUrl / embedUrl
+  // 6. JSON-LD contentUrl / embedUrl / video objects
   const jsonLdRegex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   while ((m = jsonLdRegex.exec(html)) !== null) {
     try {
-      const data = JSON.parse(m[1]);
-      const items = Array.isArray(data) ? data : [data];
-      for (const item of items) {
-        if (item.contentUrl) addSource(item.contentUrl);
-        if (item.embedUrl) addSource(item.embedUrl);
-        if (item.video?.contentUrl) addSource(item.video.contentUrl);
-        if (item.video?.embedUrl) addSource(item.video.embedUrl);
-      }
+      const walkJsonLd = (obj: any) => {
+        if (!obj || typeof obj !== 'object') return;
+        if (obj.contentUrl) addSource(obj.contentUrl);
+        if (obj.embedUrl) addSource(obj.embedUrl);
+        if (obj.url && typeof obj['@type'] === 'string' && /video/i.test(obj['@type'])) addSource(obj.url);
+        if (obj.video) walkJsonLd(obj.video);
+        if (Array.isArray(obj)) obj.forEach(walkJsonLd);
+        if (obj['@graph']) walkJsonLd(obj['@graph']);
+      };
+      walkJsonLd(JSON.parse(m[1]));
     } catch { /* invalid json */ }
   }
 
-  // 7. Common JS patterns: videoUrl, video_url, file_url, source_url, mp4
+  // 7. JS variable patterns for video URLs
   const jsPatterns = [
-    /["'](?:video[_-]?(?:url|src)|file[_-]?url|source[_-]?url|mp4[_-]?url|hls[_-]?url|dash[_-]?url|stream[_-]?url)["']\s*[:=]\s*["'](https?:\/\/[^"']+)["']/gi,
-    /(?:videoUrl|videoSrc|fileSrc|streamUrl|mp4Url|hlsUrl)\s*[:=]\s*["'](https?:\/\/[^"']+)["']/gi,
+    /["'](?:video[_-]?(?:url|src|file|path)|file[_-]?url|source[_-]?url|mp4[_-]?url|hls[_-]?url|dash[_-]?url|stream[_-]?url|download[_-]?url|media[_-]?url|content[_-]?url|playback[_-]?url)["']\s*[:=]\s*["'](https?:\/\/[^"']+)["']/gi,
+    /(?:videoUrl|videoSrc|fileSrc|streamUrl|mp4Url|hlsUrl|downloadUrl|mediaUrl|contentUrl|playbackUrl|sourceUrl)\s*[:=]\s*["'](https?:\/\/[^"']+)["']/gi,
+    /"(?:url|src|file|source|stream)":\s*"(https?:\/\/[^"]+\.(?:mp4|webm|m3u8|mpd|mov|flv)[^"]*)"/gi,
   ];
   for (const pat of jsPatterns) {
     while ((m = pat.exec(html)) !== null) addSource(m[1]);
   }
 
-  // 8. .m3u8 HLS streams
-  const hlsRegex = /["'](https?:\/\/[^"'\s]+\.m3u8(?:\?[^"'\s]*)?)["']/gi;
-  while ((m = hlsRegex.exec(html)) !== null) {
-    addSource(m[1], undefined, 'hls');
+  // 8. HLS / DASH streams
+  const hlsRegex = /["'](https?:\/\/[^"'\s<>]+\.m3u8(?:\?[^"'\s<>]*)?)["']/gi;
+  while ((m = hlsRegex.exec(html)) !== null) addSource(m[1], undefined, 'hls');
+  const dashRegex = /["'](https?:\/\/[^"'\s<>]+\.mpd(?:\?[^"'\s<>]*)?)["']/gi;
+  while ((m = dashRegex.exec(html)) !== null) addSource(m[1], undefined, 'dash');
+
+  // 9. <iframe> embeds pointing to known players
+  const iframeRegex = /<iframe[^>]*\ssrc=["']([^"']+)["']/gi;
+  while ((m = iframeRegex.exec(html)) !== null) {
+    const iframeSrc = m[1];
+    // Only extract if it looks like a video embed
+    if (/\.(mp4|webm|mov|m3u8)/.test(iframeSrc) || /embed|player|video/i.test(iframeSrc)) {
+      addSource(iframeSrc);
+    }
+  }
+
+  // 10. data-* attributes with video URLs
+  const dataAttrRegex = /data-(?:video|src|url|file|media|stream|hd|sd|mobile)[_-]?(?:url|src|file|href)?=["'](https?:\/\/[^"']+)["']/gi;
+  while ((m = dataAttrRegex.exec(html)) !== null) addSource(m[1]);
+
+  // 11. window.__INITIAL_STATE__ or similar SSR data blobs
+  const ssrBlobRegex = /(?:window\.__[A-Z_]+__|window\.\w+Data|window\.initialProps)\s*=\s*(\{[\s\S]*?\});?\s*(?:<\/script>|\n)/gi;
+  while ((m = ssrBlobRegex.exec(html)) !== null) {
+    try {
+      const blob = m[1];
+      // Extract URLs from the blob
+      const urlsInBlob = /https?:\/\/[^"'\s<>\\]+\.(?:mp4|webm|m3u8|mov|flv)(?:\?[^"'\s<>\\]*)?/gi;
+      let u;
+      while ((u = urlsInBlob.exec(blob)) !== null) {
+        addSource(u[0].replace(/\\u0026/g, '&').replace(/\\\//g, '/'));
+      }
+    } catch { /* ignore */ }
   }
 
   return sources;
+}
+
+// ── Source verification ──
+
+async function verifyVideoSources(sources: VideoSource[]): Promise<VideoSource[]> {
+  const verified: VideoSource[] = [];
+
+  const checks = sources.slice(0, 15).map(async (source) => {
+    try {
+      const res = await fetch(source.url, {
+        method: 'HEAD',
+        redirect: 'follow',
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (res.ok) {
+        const ct = res.headers.get('content-type') || '';
+        const cl = res.headers.get('content-length');
+        if (ct.includes('video') || ct.includes('octet-stream') || ct.includes('mp4') || ct.includes('webm') ||
+            ct.includes('mpegurl') || ct.includes('dash') || ct.includes('matroska') ||
+            source.format === 'hls' || source.format === 'dash' ||
+            /\.(?:mp4|webm|mov|m3u8|mpd)/.test(source.url)) {
+          return {
+            ...source,
+            size: cl ? formatBytes(parseInt(cl)) : source.size,
+            format: source.format || guessFormat(ct, source.url),
+          };
+        }
+      }
+    } catch { /* unreachable */ }
+    return null;
+  });
+
+  const results = await Promise.all(checks);
+  for (const r of results) {
+    if (r) verified.push(r);
+  }
+  return verified;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+  return (bytes / 1073741824).toFixed(1) + ' GB';
+}
+
+function guessFormat(contentType: string, url: string): string {
+  if (contentType.includes('mp4') || url.includes('.mp4')) return 'mp4';
+  if (contentType.includes('webm') || url.includes('.webm')) return 'webm';
+  if (contentType.includes('mpegurl') || url.includes('.m3u8')) return 'hls';
+  if (contentType.includes('dash') || url.includes('.mpd')) return 'dash';
+  if (contentType.includes('ogg') || url.includes('.ogg')) return 'ogg';
+  if (contentType.includes('mov') || url.includes('.mov')) return 'mov';
+  if (contentType.includes('flv') || url.includes('.flv')) return 'flv';
+  return 'mp4';
 }
