@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Download, Zap, ScanSearch } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Download, Zap, ScanSearch, Film } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import UrlInput from '@/components/UrlInput';
 import VideoPreview from '@/components/VideoPreview';
@@ -91,6 +92,16 @@ const Index = () => {
       <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-accent/5 rounded-full blur-[100px]" />
 
       <div className="relative z-10 flex flex-col items-center px-4 sm:px-6 py-10 sm:py-16 md:py-24">
+        {/* Nav */}
+        <div className="absolute top-4 right-4 sm:top-6 sm:right-6">
+          <Link to="/videos">
+            <Button variant="ghost" className="rounded-xl h-9 px-4 text-sm font-medium">
+              <Film className="h-4 w-4 mr-2" />
+              My Videos
+            </Button>
+          </Link>
+        </div>
+
         {/* Hero */}
         <div className="flex items-center gap-2 glass rounded-full px-3 sm:px-4 py-1.5 sm:py-2 mb-6 sm:mb-8 animate-float">
           <Zap className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
