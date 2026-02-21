@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Film, Globe, User, Calendar, Clock, Download, ExternalLink, Trash2, ArrowLeft, Search } from 'lucide-react';
+import { Film, Globe, User, Calendar, Clock, Download, ExternalLink, Trash2, ArrowLeft, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
@@ -27,6 +27,8 @@ const Videos = () => {
   const [videos, setVideos] = useState<StoredVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const perPage = 12;
   const { toast } = useToast();
 
   const fetchVideos = async () => {
@@ -71,6 +73,12 @@ const Videos = () => {
     v.author.toLowerCase().includes(search.toLowerCase()) ||
     v.site_name.toLowerCase().includes(search.toLowerCase())
   );
+
+  const totalPages = Math.ceil(filtered.length / perPage);
+  const paginated = filtered.slice((page - 1) * perPage, page * perPage);
+
+  // Reset page when search changes
+  useEffect(() => { setPage(1); }, [search]);
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
@@ -138,8 +146,9 @@ const Videos = () => {
 
         {/* Video grid */}
         {!loading && filtered.length > 0 && (
+          <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-            {filtered.map((video) => (
+            {paginated.map((video) => (
               <div key={video.id} className="glass rounded-2xl overflow-hidden hover:border-primary/30 transition-colors group">
                 <div className="relative aspect-video bg-secondary overflow-hidden">
                   {video.thumbnail ? (
@@ -155,7 +164,6 @@ const Videos = () => {
                       <Film className="h-10 w-10 text-muted-foreground/30" />
                     </div>
                   )}
-
                   <div className="absolute top-2 right-2 flex gap-1">
                     {video.format && (
                       <span className="glass rounded-md px-1.5 py-0.5 text-[10px] font-mono uppercase">{video.format}</span>
@@ -164,19 +172,16 @@ const Videos = () => {
                       <span className="glass rounded-md px-1.5 py-0.5 text-[10px] font-mono">{video.size}</span>
                     )}
                   </div>
-
                   {video.duration && (
                     <span className="absolute bottom-2 right-2 glass rounded-md px-1.5 py-0.5 text-[10px] font-mono flex items-center gap-1">
                       <Clock className="h-2.5 w-2.5" />{video.duration}
                     </span>
                   )}
                 </div>
-
                 <div className="p-3 space-y-1.5">
                   <h4 className="font-medium text-sm leading-tight line-clamp-2 min-h-[2.25rem]">
                     {video.title}
                   </h4>
-
                   <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
                     {video.author && (
                       <span className="flex items-center gap-0.5"><User className="h-2.5 w-2.5" />{video.author}</span>
@@ -188,7 +193,6 @@ const Videos = () => {
                       <span className="flex items-center gap-0.5"><Calendar className="h-2.5 w-2.5" />{formatDate(video.date_uploaded)}</span>
                     )}
                   </div>
-
                   <div className="flex gap-1.5 pt-1">
                     <Button
                       onClick={() => forceDownload(video.video_url)}
@@ -211,6 +215,52 @@ const Videos = () => {
               </div>
             ))}
           </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-6">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-xl"
+                disabled={page <= 1}
+                onClick={() => setPage(p => p - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+                .reduce<(number | 'dots')[]>((acc, p, i, arr) => {
+                  if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push('dots');
+                  acc.push(p);
+                  return acc;
+                }, [])
+                .map((item, i) =>
+                  item === 'dots' ? (
+                    <span key={`dots-${i}`} className="text-muted-foreground text-sm px-1">…</span>
+                  ) : (
+                    <Button
+                      key={item}
+                      variant={page === item ? 'default' : 'ghost'}
+                      className={`h-9 w-9 rounded-xl text-sm ${page === item ? '' : ''}`}
+                      onClick={() => setPage(item)}
+                    >
+                      {item}
+                    </Button>
+                  )
+                )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-xl"
+                disabled={page >= totalPages}
+                onClick={() => setPage(p => p + 1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+          </>
         )}
       </div>
     </div>
