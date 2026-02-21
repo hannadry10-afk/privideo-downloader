@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Film, Globe, User, Calendar, Clock, Download, ExternalLink, Trash2, ArrowLeft, Search, ChevronLeft, ChevronRight, Play, X } from 'lucide-react';
+import { Film, Globe, User, Calendar, Clock, Download, ExternalLink, Trash2, ArrowLeft, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -29,7 +28,6 @@ const Videos = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [activeVideo, setActiveVideo] = useState<StoredVideo | null>(null);
   const perPage = 12;
   const { toast } = useToast();
 
@@ -152,10 +150,7 @@ const Videos = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
             {paginated.map((video) => (
               <div key={video.id} className="glass rounded-2xl overflow-hidden hover:border-primary/30 transition-colors group">
-                <div
-                  className="relative aspect-video bg-secondary overflow-hidden cursor-pointer"
-                  onClick={() => setActiveVideo(video)}
-                >
+                <div className="relative aspect-video bg-secondary overflow-hidden">
                   {video.thumbnail ? (
                     <img
                       src={video.thumbnail}
@@ -169,12 +164,6 @@ const Videos = () => {
                       <Film className="h-10 w-10 text-muted-foreground/30" />
                     </div>
                   )}
-                  {/* Play overlay */}
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
-                    <div className="h-12 w-12 rounded-full bg-primary/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity scale-90 group-hover:scale-100">
-                      <Play className="h-5 w-5 text-primary-foreground ml-0.5" />
-                    </div>
-                  </div>
                   <div className="absolute top-2 right-2 flex gap-1">
                     {video.format && (
                       <span className="glass rounded-md px-1.5 py-0.5 text-[10px] font-mono uppercase">{video.format}</span>
@@ -274,52 +263,6 @@ const Videos = () => {
           </>
         )}
       </div>
-
-      {/* Video Player Modal */}
-      <Dialog open={!!activeVideo} onOpenChange={(open) => !open && setActiveVideo(null)}>
-        <DialogContent className="max-w-4xl w-[95vw] p-0 overflow-hidden rounded-2xl border-border/50 bg-card">
-          {activeVideo && (
-            <div className="flex flex-col">
-              <div className="relative aspect-video bg-black">
-                <video
-                  src={activeVideo.video_url}
-                  controls
-                  autoPlay
-                  className="w-full h-full"
-                  poster={activeVideo.thumbnail || undefined}
-                />
-              </div>
-              <div className="p-4 sm:p-5 space-y-3">
-                <h3 className="font-semibold text-base sm:text-lg leading-tight">{activeVideo.title}</h3>
-                <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                  {activeVideo.author && (
-                    <span className="flex items-center gap-1"><User className="h-3 w-3" />{activeVideo.author}</span>
-                  )}
-                  {activeVideo.site_name && (
-                    <span className="flex items-center gap-1"><Globe className="h-3 w-3" />{activeVideo.site_name}</span>
-                  )}
-                  {activeVideo.duration && (
-                    <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{activeVideo.duration}</span>
-                  )}
-                  {activeVideo.date_uploaded && (
-                    <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{formatDate(activeVideo.date_uploaded)}</span>
-                  )}
-                </div>
-                {activeVideo.description && (
-                  <p className="text-sm text-muted-foreground line-clamp-3">{activeVideo.description}</p>
-                )}
-                <Button
-                  onClick={() => forceDownload(activeVideo.video_url)}
-                  className="rounded-xl h-10 font-medium w-full sm:w-auto"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Download Video
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };
