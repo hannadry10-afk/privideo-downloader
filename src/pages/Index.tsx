@@ -1,28 +1,21 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Download, Zap, ScanSearch, Film } from 'lucide-react';
+import { Download, Zap, Film } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import UrlInput from '@/components/UrlInput';
 import VideoPreview from '@/components/VideoPreview';
 import VideoSkeleton from '@/components/VideoSkeleton';
-import VideoGrid from '@/components/VideoGrid';
-import ScanSkeleton from '@/components/ScanSkeleton';
-import { fetchVideo, scanVideos, type VideoResult, type ScanResult } from '@/lib/api/video';
+import { fetchVideo, type VideoResult } from '@/lib/api/video';
 import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
-  const [isScanning, setIsScanning] = useState(false);
   const [result, setResult] = useState<VideoResult | null>(null);
-  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
-  const [lastUrl, setLastUrl] = useState('');
   const { toast } = useToast();
 
   const handleFetch = async (url: string) => {
     setIsLoading(true);
     setResult(null);
-    setScanResult(null);
-    setLastUrl(url);
 
     try {
       const data = await fetchVideo(url);
@@ -44,43 +37,6 @@ const Index = () => {
       });
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleScanAll = async (url?: string) => {
-    const targetUrl = url || lastUrl;
-    if (!targetUrl) return;
-
-    setIsScanning(true);
-    setScanResult(null);
-    setResult(null);
-    setLastUrl(targetUrl);
-
-    try {
-      const data = await scanVideos(targetUrl);
-      setScanResult(data);
-
-      if (!data.success) {
-        toast({
-          title: 'Scan failed',
-          description: data.error || 'Could not scan the website for videos.',
-          variant: 'destructive',
-        });
-      } else {
-        toast({
-          title: `Scan complete`,
-          description: `Found ${data.totalFound || 0} video(s) on this page.`,
-        });
-      }
-    } catch (error) {
-      console.error('Error scanning:', error);
-      toast({
-        title: 'Connection error',
-        description: 'Failed to connect to the server. Please try again.',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsScanning(false);
     }
   };
 
@@ -122,32 +78,12 @@ const Index = () => {
         {/* URL Input */}
         <UrlInput onSubmit={handleFetch} isLoading={isLoading} />
 
-        {/* Scan All Videos button */}
-        {!isLoading && !isScanning && lastUrl && (
-          <Button
-            onClick={() => handleScanAll()}
-            variant="secondary"
-            className="mt-4 rounded-xl h-11 px-6 font-medium"
-          >
-            <ScanSearch className="h-4 w-4 mr-2" />
-            Scan All Videos on This Page
-          </Button>
-        )}
-
         {/* Results */}
         {isLoading && <VideoSkeleton />}
-        {isScanning && <ScanSkeleton />}
-        {!isLoading && !isScanning && result && !scanResult && <VideoPreview result={result} />}
-        {!isLoading && !isScanning && scanResult?.success && scanResult.videos && (
-          <VideoGrid
-            videos={scanResult.videos}
-            siteName={scanResult.siteName}
-            scannedUrl={scanResult.scannedUrl}
-          />
-        )}
+        {!isLoading && result && <VideoPreview result={result} />}
 
         {/* Features */}
-        {!result && !scanResult && !isLoading && !isScanning && (
+        {!result && !isLoading && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mt-12 sm:mt-20 w-full max-w-3xl px-1">
             {[
               {
@@ -156,9 +92,9 @@ const Index = () => {
                 desc: 'YouTube, TikTok, Instagram, Twitter, Reddit, Vimeo and many more.',
               },
               {
-                icon: ScanSearch,
-                title: 'Site Scanner',
-                desc: 'Scan any webpage to find and download all embedded videos at once.',
+                icon: Film,
+                title: 'Auto Upload',
+                desc: 'Instantly save any video to your library with one click.',
               },
               {
                 icon: Zap,
