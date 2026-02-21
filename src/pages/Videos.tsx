@@ -126,11 +126,11 @@ const Videos = () => {
               {search ? 'No matching videos' : 'No videos yet'}
             </h3>
             <p className="text-sm text-muted-foreground mb-4">
-              {search ? 'Try a different search term.' : 'Scan a website and upload videos to see them here.'}
+              {search ? 'Try a different search term.' : 'Fetch a video and upload it to see it here.'}
             </p>
             {!search && (
               <Link to="/">
-                <Button className="rounded-xl">Go to Scanner</Button>
+                <Button className="rounded-xl">Go to Downloader</Button>
               </Link>
             )}
           </div>

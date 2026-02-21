@@ -1,5 +1,9 @@
-import { Download, ExternalLink, Film, Clock, Globe, User, Monitor, HardDrive, FileVideo } from 'lucide-react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Download, ExternalLink, Film, Clock, Globe, User, Monitor, HardDrive, FileVideo, Upload, Loader2, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 import type { VideoResult, VideoSource } from '@/lib/api/video';
 
 interface VideoPreviewProps {
@@ -7,6 +11,10 @@ interface VideoPreviewProps {
 }
 
 const VideoPreview = ({ result }: VideoPreviewProps) => {
+  const [uploading, setUploading] = useState(false);
+  const [uploaded, setUploaded] = useState(false);
+  const navigate = useNavigate();
+  const { toast } = useToast();
   const metadata = result.metadata;
 
   const forceDownload = (url: string, filename?: string) => {
@@ -18,6 +26,36 @@ const VideoPreview = ({ result }: VideoPreviewProps) => {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  };
+
+  const handleUpload = async () => {
+    if (!result.success || !metadata) return;
+    setUploading(true);
+    try {
+      const videoUrl = allSources[0]?.url || metadata.videoUrl || '';
+      const { error } = await supabase.from('videos').insert({
+        title: metadata.title || 'Untitled Video',
+        description: metadata.description || '',
+        thumbnail: metadata.thumbnail || '',
+        duration: metadata.duration || '',
+        video_url: videoUrl,
+        source_url: videoUrl,
+        format: 'mp4',
+        quality: metadata.resolution || '',
+        author: metadata.author || '',
+        site_name: metadata.siteName || '',
+      });
+      if (error) {
+        toast({ title: 'Upload failed', description: error.message, variant: 'destructive' });
+      } else {
+        setUploaded(true);
+        toast({ title: 'Uploaded!', description: 'Video saved to your library.' });
+      }
+    } catch {
+      toast({ title: 'Error', description: 'Something went wrong.', variant: 'destructive' });
+    } finally {
+      setUploading(false);
+    }
   };
 
   const renderSourceLabel = (item: { quality?: string; format?: string; size?: string }, i: number) => {
@@ -150,6 +188,30 @@ const VideoPreview = ({ result }: VideoPreviewProps) => {
                   </Button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Upload to Library */}
+          {result.success && (
+            <div className="pt-1">
+              {uploaded ? (
+                <Button
+                  onClick={() => navigate('/videos')}
+                  className="w-full h-12 rounded-xl font-semibold bg-accent text-accent-foreground"
+                >
+                  <Check className="h-4 w-4 mr-2" />
+                  View My Videos
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleUpload}
+                  disabled={uploading}
+                  className="w-full h-12 rounded-xl font-semibold"
+                >
+                  {uploading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+                  {uploading ? 'Uploading to Library...' : 'Upload to My Library'}
+                </Button>
+              )}
             </div>
           )}
 
