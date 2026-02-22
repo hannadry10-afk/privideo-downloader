@@ -14,57 +14,7 @@ export type Database = {
   }
   public: {
     Tables: {
-      videos: {
-        Row: {
-          author: string | null
-          created_at: string
-          date_uploaded: string | null
-          description: string | null
-          duration: string | null
-          format: string | null
-          id: string
-          quality: string | null
-          site_name: string | null
-          size: string | null
-          source_url: string | null
-          thumbnail: string | null
-          title: string
-          video_url: string
-        }
-        Insert: {
-          author?: string | null
-          created_at?: string
-          date_uploaded?: string | null
-          description?: string | null
-          duration?: string | null
-          format?: string | null
-          id?: string
-          quality?: string | null
-          site_name?: string | null
-          size?: string | null
-          source_url?: string | null
-          thumbnail?: string | null
-          title?: string
-          video_url: string
-        }
-        Update: {
-          author?: string | null
-          created_at?: string
-          date_uploaded?: string | null
-          description?: string | null
-          duration?: string | null
-          format?: string | null
-          id?: string
-          quality?: string | null
-          site_name?: string | null
-          size?: string | null
-          source_url?: string | null
-          thumbnail?: string | null
-          title?: string
-          video_url?: string
-        }
-        Relationships: []
-      }
+      [_ in never]: never
     }
     Views: {
       [_ in never]: never
