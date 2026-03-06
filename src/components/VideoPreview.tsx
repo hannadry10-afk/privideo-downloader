@@ -55,6 +55,8 @@ const VideoPreview = ({ result }: VideoPreviewProps) => {
     });
   }
 
+  const isFallbackOnly = result.type === 'metadata_only' && allSources.length > 0;
+
   return (
     <div className="w-full max-w-2xl mx-auto mt-8">
       <div className="glass rounded-2xl overflow-hidden">
