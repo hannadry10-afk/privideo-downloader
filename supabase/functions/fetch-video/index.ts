@@ -296,16 +296,16 @@ function extractMetadata(html: string, url: string): Record<string, string> {
   const height = getMetaContent('og:video:height');
 
   return {
-    title: getMetaContent('og:title') || titleMatch?.[1]?.trim() || 'Unknown',
-    description: getMetaContent('og:description') || getMetaContent('description') || '',
-    thumbnail: getMetaContent('og:image') || '',
+    title: decodeHtmlEntities(getMetaContent('og:title') || titleMatch?.[1]?.trim() || 'Unknown'),
+    description: decodeHtmlEntities(getMetaContent('og:description') || getMetaContent('description') || ''),
+    thumbnail: normalizeExtractedUrl(getMetaContent('og:image') || ''),
     duration: getMetaContent('video:duration') || '',
-    siteName: getMetaContent('og:site_name') || new URL(url).hostname,
+    siteName: decodeHtmlEntities(getMetaContent('og:site_name') || new URL(url).hostname),
     type: getMetaContent('og:type') || 'video',
-    videoUrl,
+    videoUrl: normalizeExtractedUrl(videoUrl),
     resolution: width && height ? `${width}x${height}` : '',
-    author: getMetaContent('article:author') || getMetaContent('twitter:creator') || '',
-    keywords: getMetaContent('keywords') || '',
+    author: decodeHtmlEntities(getMetaContent('article:author') || getMetaContent('twitter:creator') || ''),
+    keywords: decodeHtmlEntities(getMetaContent('keywords') || ''),
   };
 }
 
