@@ -105,6 +105,23 @@ interface VideoSource {
   type?: string;
 }
 
+function mergeUniqueSources(...groups: VideoSource[][]): VideoSource[] {
+  const merged: VideoSource[] = [];
+  const seen = new Set<string>();
+
+  for (const group of groups) {
+    for (const source of group) {
+      if (!source?.url) continue;
+      const normalized = normalizeExtractedUrl(source.url);
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      merged.push({ ...source, url: normalized });
+    }
+  }
+
+  return merged;
+}
+
 // ── Cobalt ──
 
 async function tryCobalt(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
