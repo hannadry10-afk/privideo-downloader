@@ -258,6 +258,9 @@ async function fetchPageDataWithRetry(url: string): Promise<PageData> {
     }
   }
 
+  const jinaFallback = await tryJinaMirror(url);
+  if (jinaFallback) return jinaFallback;
+
   return { metadata: defaultMeta, videoSources: [] };
 }
 
