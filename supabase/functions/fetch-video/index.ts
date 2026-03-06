@@ -98,6 +98,10 @@ function isYouTube(url: string): boolean {
   return /(?:youtube\.com|youtu\.be|youtube-nocookie\.com)/i.test(url);
 }
 
+function isTikTok(url: string): boolean {
+  return /(?:tiktok\.com|vm\.tiktok\.com)/i.test(url);
+}
+
 function generateFilename(title: string, source: VideoSource): string {
   const safeName = (title || 'video').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().replace(/\s+/g, '_').slice(0, 80);
   const ext = source.format || 'mp4';
