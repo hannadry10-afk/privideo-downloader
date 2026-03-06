@@ -306,6 +306,41 @@ function decodeHtmlEntities(input: string): string {
     .replace(/&gt;/g, '>');
 }
 
+async function tryJinaMirror(url: string): Promise<PageData | null> {
+  try {
+    const jinaUrl = `https://r.jina.ai/http://${url.replace(/^https?:\/\//i, '')}`;
+    const response = await fetch(jinaUrl, {
+      headers: { 'User-Agent': USER_AGENTS[0] },
+      signal: AbortSignal.timeout(12000),
+    });
+
+    if (!response.ok) return null;
+
+    const body = await response.text();
+    const videoSources = extractVideoSources(body, url);
+    const metadata = {
+      title: 'Unknown',
+      description: '',
+      thumbnail: '',
+      duration: '',
+      siteName: new URL(url).hostname,
+      type: 'video',
+      videoUrl: '',
+      resolution: '',
+      author: '',
+      keywords: '',
+    };
+
+    if (videoSources.length > 0) {
+      return { metadata, videoSources };
+    }
+  } catch {
+    // ignore mirror fallback failures
+  }
+
+  return null;
+}
+
 // ── Metadata extraction ──
 
 function extractMetadata(html: string, url: string): Record<string, string> {
