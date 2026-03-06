@@ -256,6 +256,31 @@ async function fetchPageDataWithRetry(url: string): Promise<PageData> {
   return { metadata: defaultMeta, videoSources: [] };
 }
 
+function normalizeExtractedUrl(raw: string): string {
+  if (!raw) return '';
+
+  return raw
+    .replace(/\\u0025/gi, '%')
+    .replace(/\\u0026/gi, '&')
+    .replace(/\\u003D/gi, '=')
+    .replace(/\\u003A/gi, ':')
+    .replace(/\\u002F/gi, '/')
+    .replace(/\\\//g, '/')
+    .replace(/&amp;/g, '&')
+    .trim();
+}
+
+function decodeHtmlEntities(input: string): string {
+  return input
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
 // ── Metadata extraction ──
 
 function extractMetadata(html: string, url: string): Record<string, string> {
