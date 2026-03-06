@@ -457,40 +457,88 @@ function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
 
 // ── Source verification ──
 
-async function verifyVideoSources(sources: VideoSource[]): Promise<VideoSource[]> {
-  const verified: VideoSource[] = [];
-
-  const checks = sources.slice(0, 15).map(async (source) => {
-    try {
-      const res = await fetch(source.url, {
-        method: 'HEAD',
-        redirect: 'follow',
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-        signal: AbortSignal.timeout(6000),
-      });
-      if (res.ok) {
-        const ct = res.headers.get('content-type') || '';
-        const cl = res.headers.get('content-length');
-        if (ct.includes('video') || ct.includes('octet-stream') || ct.includes('mp4') || ct.includes('webm') ||
-            ct.includes('mpegurl') || ct.includes('dash') || ct.includes('matroska') ||
-            source.format === 'hls' || source.format === 'dash' ||
-            /\.(?:mp4|webm|mov|m3u8|mpd)/.test(source.url)) {
-          return {
-            ...source,
-            size: cl ? formatBytes(parseInt(cl)) : source.size,
-            format: source.format || guessFormat(ct, source.url),
-          };
-        }
-      }
-    } catch { /* unreachable */ }
-    return null;
-  });
-
+async function verifyVideoSources(sources: VideoSource[], refererUrl?: string): Promise<VideoSource[]> {
+  const checks = sources.slice(0, 20).map((source) => verifySingleSource(source, refererUrl));
   const results = await Promise.all(checks);
-  for (const r of results) {
-    if (r) verified.push(r);
+  return results.filter((r): r is VideoSource => !!r);
+}
+
+async function verifySingleSource(source: VideoSource, refererUrl?: string): Promise<VideoSource | null> {
+  const commonHeaders: Record<string, string> = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+  };
+
+  if (refererUrl) {
+    commonHeaders['Referer'] = refererUrl;
   }
-  return verified;
+
+  try {
+    const headRes = await fetch(source.url, {
+      method: 'HEAD',
+      redirect: 'follow',
+      headers: commonHeaders,
+      signal: AbortSignal.timeout(7000),
+    });
+
+    const headContentType = (headRes.headers.get('content-type') || '').toLowerCase();
+    const headContentLength = headRes.headers.get('content-length');
+
+    if (headRes.ok && isLikelyVideoSource(headContentType, source)) {
+      return {
+        ...source,
+        size: headContentLength ? formatBytes(parseInt(headContentLength)) : source.size,
+        format: source.format || guessFormat(headContentType, source.url),
+      };
+    }
+  } catch {
+    // Some hosts block HEAD, fallback to ranged GET below
+  }
+
+  try {
+    const getRes = await fetch(source.url, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: { ...commonHeaders, Range: 'bytes=0-1' },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    const ct = (getRes.headers.get('content-type') || '').toLowerCase();
+    const cl = getRes.headers.get('content-length');
+    const isPartial = getRes.status === 206 || getRes.status === 200;
+
+    if (isPartial && isLikelyVideoSource(ct, source)) {
+      return {
+        ...source,
+        size: cl ? formatBytes(parseInt(cl)) : source.size,
+        format: source.format || guessFormat(ct, source.url),
+      };
+    }
+  } catch {
+    // unreachable
+  }
+
+  return null;
+}
+
+function isLikelyVideoSource(contentType: string, source: VideoSource): boolean {
+  const ct = contentType.toLowerCase();
+  const url = source.url.toLowerCase();
+
+  return (
+    ct.includes('video') ||
+    ct.includes('octet-stream') ||
+    ct.includes('mp4') ||
+    ct.includes('webm') ||
+    ct.includes('mpegurl') ||
+    ct.includes('x-mpegurl') ||
+    ct.includes('vnd.apple.mpegurl') ||
+    ct.includes('dash') ||
+    ct.includes('matroska') ||
+    source.format === 'hls' ||
+    source.format === 'dash' ||
+    /\.(?:mp4|webm|mov|m3u8|mpd|m4v|flv|mkv|avi|ogv)(?:\?|$)/.test(url) ||
+    /(fbcdn\.net|cdninstagram\.com|twimg\.com)\/.+/.test(url)
+  );
 }
 
 function formatBytes(bytes: number): string {
