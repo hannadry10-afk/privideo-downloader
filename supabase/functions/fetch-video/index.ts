@@ -429,6 +429,29 @@ function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
     } catch { /* ignore */ }
   }
 
+  // 12. Platform-specific JSON keys (helps with Facebook and similar players)
+  const keyedUrlPatterns = [
+    'playable_url', 'playable_url_quality_hd',
+    'browser_native_sd_url', 'browser_native_hd_url',
+    'sd_src', 'hd_src', 'sd_src_no_ratelimit', 'hd_src_no_ratelimit',
+    'video_url', 'video_playback_url',
+  ];
+
+  for (const key of keyedUrlPatterns) {
+    const pattern = new RegExp(`["']${key}["']\\s*:\\s*["']([^"']+)["']`, 'gi');
+    while ((m = pattern.exec(html)) !== null) {
+      const candidate = normalizeExtractedUrl(m[1]);
+      if (candidate.startsWith('http')) addSource(candidate);
+    }
+  }
+
+  // 13. Escaped CDN links without explicit file extensions
+  const escapedCdnRegex = /(https?:\\\\\/\\\\\/[^"'\\]+(?:fbcdn\.net|cdninstagram\.com|twimg\.com)[^"']*)/gi;
+  while ((m = escapedCdnRegex.exec(html)) !== null) {
+    const candidate = normalizeExtractedUrl(m[1]);
+    if (candidate.startsWith('http')) addSource(candidate);
+  }
+
   return sources;
 }
 
