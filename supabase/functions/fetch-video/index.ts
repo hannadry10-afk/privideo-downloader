@@ -229,31 +229,53 @@ async function fetchPageDataWithRetry(url: string): Promise<PageData> {
     resolution: '', author: '', keywords: '',
   };
 
-  for (const ua of USER_AGENTS) {
-    try {
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': ua,
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Sec-Fetch-Dest': 'document',
-          'Sec-Fetch-Mode': 'navigate',
-          'Sec-Fetch-Site': 'none',
-        },
-        redirect: 'follow',
-      });
-      const html = await response.text();
-      const metadata = extractMetadata(html, url);
-      const videoSources = extractVideoSources(html, url);
+  const candidateUrls = buildCandidatePageUrls(url);
 
-      if (videoSources.length > 0 || metadata.title !== 'Unknown') {
-        return { metadata, videoSources };
+  for (const candidateUrl of candidateUrls) {
+    for (const ua of USER_AGENTS) {
+      try {
+        const response = await fetch(candidateUrl, {
+          headers: {
+            'User-Agent': ua,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+          },
+          redirect: 'follow',
+        });
+        const html = await response.text();
+        const metadata = extractMetadata(html, candidateUrl);
+        const videoSources = extractVideoSources(html, candidateUrl);
+
+        if (videoSources.length > 0 || metadata.videoUrl || metadata.title !== 'Unknown') {
+          return { metadata, videoSources };
+        }
+      } catch {
+        continue;
       }
-    } catch {
-      continue;
     }
   }
+
   return { metadata: defaultMeta, videoSources: [] };
+}
+
+function buildCandidatePageUrls(url: string): string[] {
+  const candidates = [url];
+
+  if (/(?:facebook\.com)/i.test(url)) {
+    candidates.push(url.replace('://www.facebook.com', '://m.facebook.com'));
+    candidates.push(url.replace('://www.facebook.com', '://mbasic.facebook.com'));
+
+    const reelId = url.match(/facebook\.com\/reel\/(\d+)/i)?.[1] || url.match(/[?&]v=(\d+)/i)?.[1];
+    if (reelId) {
+      candidates.push(`https://m.facebook.com/watch/?v=${reelId}`);
+      candidates.push(`https://mbasic.facebook.com/watch/?v=${reelId}`);
+    }
+  }
+
+  return [...new Set(candidates)];
 }
 
 function normalizeExtractedUrl(raw: string): string {
