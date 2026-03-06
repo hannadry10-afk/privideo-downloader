@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Download, Zap } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Download, Zap, Users } from 'lucide-react';
 import UrlInput from '@/components/UrlInput';
 import VideoPreview from '@/components/VideoPreview';
 import VideoSkeleton from '@/components/VideoSkeleton';
