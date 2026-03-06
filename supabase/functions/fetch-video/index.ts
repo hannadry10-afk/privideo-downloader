@@ -25,10 +25,18 @@ serve(async (req) => {
     const cobaltResult = await tryCobalt(url, pageData);
     if (cobaltResult) return jsonResponse(cobaltResult);
 
-    // Try Invidious for YouTube
+    // Try Invidious / Piped for YouTube
     if (isYouTube(url)) {
       const invResult = await tryInvidious(url, pageData);
       if (invResult) return jsonResponse(invResult);
+      const pipedResult = await tryPiped(url, pageData);
+      if (pipedResult) return jsonResponse(pipedResult);
+    }
+
+    // Try TikTok extraction
+    if (isTikTok(url)) {
+      const ttResult = await tryTikTok(url, pageData);
+      if (ttResult) return jsonResponse(ttResult);
     }
 
     // If we found video sources from scraping (or metadata video URL), verify and return
@@ -88,6 +96,10 @@ function jsonResponse(data: unknown, status = 200) {
 
 function isYouTube(url: string): boolean {
   return /(?:youtube\.com|youtu\.be|youtube-nocookie\.com)/i.test(url);
+}
+
+function isTikTok(url: string): boolean {
+  return /(?:tiktok\.com|vm\.tiktok\.com)/i.test(url);
 }
 
 function generateFilename(title: string, source: VideoSource): string {
@@ -207,6 +219,187 @@ async function tryInvidious(url: string, pageData: PageData): Promise<Record<str
 function extractYouTubeId(url: string): string | null {
   const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?.*v=|embed\/|v\/|shorts\/))([a-zA-Z0-9_-]{11})/);
   return m ? m[1] : null;
+}
+
+// ── Piped (YouTube fallback) ──
+
+const PIPED_INSTANCES = [
+  'https://pipedapi.kavin.rocks',
+  'https://pipedapi.adminforge.de',
+  'https://api.piped.projectsegfau.lt',
+];
+
+async function tryPiped(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  const videoId = extractYouTubeId(url);
+  if (!videoId) return null;
+
+  for (const instance of PIPED_INSTANCES) {
+    try {
+      const res = await fetch(`${instance}/streams/${videoId}`, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+
+      const sources: VideoSource[] = [];
+      for (const s of data.videoStreams || []) {
+        if (s.url && s.videoOnly === false) {
+          sources.push({ url: s.url, quality: s.quality, format: s.format?.split('/')[1] || 'mp4', type: 'combined' });
+        }
+      }
+      // Also add video-only streams with higher quality
+      for (const s of data.videoStreams || []) {
+        if (s.url && s.videoOnly === true) {
+          sources.push({ url: s.url, quality: s.quality, format: s.format?.split('/')[1] || 'webm', type: 'video' });
+        }
+      }
+
+      if (sources.length > 0) {
+        const meta = {
+          ...pageData.metadata,
+          title: data.title || pageData.metadata.title,
+          thumbnail: data.thumbnailUrl || pageData.metadata.thumbnail,
+          author: data.uploader || pageData.metadata.author,
+          duration: data.duration?.toString() || pageData.metadata.duration,
+        };
+        return {
+          success: true,
+          type: sources.length === 1 ? 'direct' : 'picker',
+          url: sources.length === 1 ? sources[0].url : undefined,
+          filename: sources.length === 1 ? generateFilename(meta.title, sources[0]) : undefined,
+          picker: sources.length > 1 ? sources.map(s => ({ type: 'video', url: s.url, thumb: meta.thumbnail, quality: s.quality, format: s.format, size: s.size })) : undefined,
+          metadata: meta,
+          videoSources: sources,
+        };
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+// ── TikTok extraction ──
+
+async function tryTikTok(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  // Strategy 1: Use tikwm.com open API
+  try {
+    const res = await fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`, {
+      headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.data) {
+        const d = json.data;
+        const sources: VideoSource[] = [];
+        // No-watermark URL
+        if (d.play) sources.push({ url: d.play, quality: 'HD (no watermark)', format: 'mp4', type: 'combined' });
+        // HD play
+        if (d.hdplay) sources.push({ url: d.hdplay, quality: 'HD+', format: 'mp4', type: 'combined' });
+        // Watermarked version
+        if (d.wmplay) sources.push({ url: d.wmplay, quality: 'Watermarked', format: 'mp4', type: 'combined' });
+        // Audio
+        if (d.music) sources.push({ url: d.music, quality: 'Audio', format: 'mp3', type: 'audio' });
+
+        if (sources.length > 0) {
+          const meta = {
+            ...pageData.metadata,
+            title: d.title || pageData.metadata.title,
+            thumbnail: d.cover || d.origin_cover || pageData.metadata.thumbnail,
+            author: d.author?.nickname || d.author?.unique_id || pageData.metadata.author,
+            duration: d.duration?.toString() || pageData.metadata.duration,
+          };
+          return {
+            success: true,
+            type: sources.length === 1 ? 'direct' : 'picker',
+            url: sources.length === 1 ? sources[0].url : undefined,
+            filename: sources.length === 1 ? generateFilename(meta.title, sources[0]) : undefined,
+            picker: sources.length > 1 ? sources.map(s => ({ type: s.type === 'audio' ? 'audio' : 'video', url: s.url, thumb: meta.thumbnail, quality: s.quality, format: s.format })) : undefined,
+            metadata: meta,
+            videoSources: sources,
+          };
+        }
+      }
+    }
+  } catch (e) {
+    console.log('tikwm fallback failed:', e);
+  }
+
+  // Strategy 2: Try tikcdn.io
+  try {
+    const res = await fetch('https://tikcdn.io/ssstik/' + encodeURIComponent(url), {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      signal: AbortSignal.timeout(10000),
+      redirect: 'follow',
+    });
+    const ct = res.headers.get('content-type') || '';
+    if (res.ok && ct.includes('video')) {
+      return {
+        success: true,
+        type: 'direct',
+        url: res.url,
+        filename: generateFilename(pageData.metadata.title, { url: res.url, format: 'mp4' }),
+        metadata: pageData.metadata,
+        videoSources: [{ url: res.url, quality: 'SD', format: 'mp4', type: 'combined' }],
+      };
+    }
+  } catch (e) {
+    console.log('tikcdn fallback failed:', e);
+  }
+
+  // Strategy 3: Scrape mobile TikTok page for __UNIVERSAL_DATA_FOR_REHYDRATION__
+  try {
+    const mobileUrl = url.replace('www.tiktok.com', 'm.tiktok.com');
+    const res = await fetch(mobileUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
+        'Accept': 'text/html',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(10000),
+    });
+    const html = await res.text();
+
+    // Extract from __UNIVERSAL_DATA_FOR_REHYDRATION__
+    const ssrMatch = html.match(/window\['SIGI_STATE'\]\s*=\s*(\{[\s\S]*?\});/);
+    const rehydrateMatch = html.match(/<script[^>]*id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
+    const blob = ssrMatch?.[1] || rehydrateMatch?.[1] || '';
+
+    if (blob) {
+      const videoUrls: string[] = [];
+      const urlPattern = /https?:\/\/[^"'\s\\]+\.(?:mp4|webm)(?:\?[^"'\s\\]*)?/g;
+      let match;
+      while ((match = urlPattern.exec(blob)) !== null) {
+        videoUrls.push(normalizeExtractedUrl(match[0]));
+      }
+
+      // Also look for playAddr / downloadAddr keys
+      const addrPattern = /["'](?:playAddr|downloadAddr|play_addr(?:_lowbr)?|download_addr)["']\s*:\s*["'](https?:\/\/[^"']+)["']/gi;
+      while ((match = addrPattern.exec(blob)) !== null) {
+        videoUrls.push(normalizeExtractedUrl(match[1]));
+      }
+
+      const unique = [...new Set(videoUrls)].filter(u => u.startsWith('http'));
+      if (unique.length > 0) {
+        const sources = unique.map(u => ({ url: u, quality: 'Direct', format: 'mp4', type: 'combined' as const }));
+        return {
+          success: true,
+          type: sources.length === 1 ? 'direct' : 'picker',
+          url: sources.length === 1 ? sources[0].url : undefined,
+          filename: sources.length === 1 ? generateFilename(pageData.metadata.title, sources[0]) : undefined,
+          picker: sources.length > 1 ? sources.map(s => ({ type: 'video', url: s.url, thumb: pageData.metadata.thumbnail, quality: s.quality, format: s.format })) : undefined,
+          metadata: pageData.metadata,
+          videoSources: sources,
+        };
+      }
+    }
+  } catch (e) {
+    console.log('TikTok mobile scrape failed:', e);
+  }
+
+  return null;
 }
 
 // ── Page fetching with retry / multiple user agents ──
