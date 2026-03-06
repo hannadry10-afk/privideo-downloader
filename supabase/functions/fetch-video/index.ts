@@ -31,16 +31,21 @@ serve(async (req) => {
       if (invResult) return jsonResponse(invResult);
     }
 
-    // If we found video sources from scraping, verify and return
-    if (pageData.videoSources.length > 0) {
-      const verified = await verifyVideoSources(pageData.videoSources);
+    // If we found video sources from scraping (or metadata video URL), verify and return
+    const sourceCandidates = mergeUniqueSources(
+      pageData.videoSources,
+      pageData.metadata.videoUrl ? [{ url: pageData.metadata.videoUrl }] : [],
+    );
+
+    if (sourceCandidates.length > 0) {
+      const verified = await verifyVideoSources(sourceCandidates, url);
       if (verified.length > 0) {
         return jsonResponse({
           success: true,
           type: verified.length === 1 ? 'direct' : 'picker',
           url: verified.length === 1 ? verified[0].url : undefined,
           filename: verified.length === 1 ? generateFilename(pageData.metadata.title, verified[0]) : undefined,
-          picker: verified.length > 1 ? verified.map((s, i) => ({
+          picker: verified.length > 1 ? verified.map((s) => ({
             type: 'video', url: s.url, thumb: pageData.metadata.thumbnail,
             quality: s.quality, format: s.format, size: s.size,
           })) : undefined,
@@ -48,6 +53,14 @@ serve(async (req) => {
           videoSources: verified,
         });
       }
+
+      // Fallback: keep unverified raw links so frontend can still offer play/open options
+      return jsonResponse({
+        success: true,
+        type: 'metadata_only',
+        metadata: pageData.metadata,
+        videoSources: sourceCandidates,
+      });
     }
 
     // Return metadata only
@@ -55,7 +68,7 @@ serve(async (req) => {
       success: true,
       type: 'metadata_only',
       metadata: pageData.metadata,
-      videoSources: pageData.videoSources,
+      videoSources: [],
     });
 
   } catch (error) {
@@ -90,6 +103,23 @@ interface VideoSource {
   format?: string;
   size?: string;
   type?: string;
+}
+
+function mergeUniqueSources(...groups: VideoSource[][]): VideoSource[] {
+  const merged: VideoSource[] = [];
+  const seen = new Set<string>();
+
+  for (const group of groups) {
+    for (const source of group) {
+      if (!source?.url) continue;
+      const normalized = normalizeExtractedUrl(source.url);
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      merged.push({ ...source, url: normalized });
+    }
+  }
+
+  return merged;
 }
 
 // ── Cobalt ──
@@ -199,31 +229,116 @@ async function fetchPageDataWithRetry(url: string): Promise<PageData> {
     resolution: '', author: '', keywords: '',
   };
 
-  for (const ua of USER_AGENTS) {
-    try {
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': ua,
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Sec-Fetch-Dest': 'document',
-          'Sec-Fetch-Mode': 'navigate',
-          'Sec-Fetch-Site': 'none',
-        },
-        redirect: 'follow',
-      });
-      const html = await response.text();
-      const metadata = extractMetadata(html, url);
-      const videoSources = extractVideoSources(html, url);
+  const candidateUrls = buildCandidatePageUrls(url);
 
-      if (videoSources.length > 0 || metadata.title !== 'Unknown') {
-        return { metadata, videoSources };
+  for (const candidateUrl of candidateUrls) {
+    for (const ua of USER_AGENTS) {
+      try {
+        const response = await fetch(candidateUrl, {
+          headers: {
+            'User-Agent': ua,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+          },
+          redirect: 'follow',
+        });
+        const html = await response.text();
+        const metadata = extractMetadata(html, candidateUrl);
+        const videoSources = extractVideoSources(html, candidateUrl);
+
+        if (videoSources.length > 0 || metadata.videoUrl || metadata.title !== 'Unknown') {
+          return { metadata, videoSources };
+        }
+      } catch {
+        continue;
       }
-    } catch {
-      continue;
     }
   }
+
+  const jinaFallback = await tryJinaMirror(url);
+  if (jinaFallback) return jinaFallback;
+
   return { metadata: defaultMeta, videoSources: [] };
+}
+
+function buildCandidatePageUrls(url: string): string[] {
+  const candidates = [url];
+
+  if (/(?:facebook\.com)/i.test(url)) {
+    candidates.push(url.replace('://www.facebook.com', '://m.facebook.com'));
+    candidates.push(url.replace('://www.facebook.com', '://mbasic.facebook.com'));
+
+    const reelId = url.match(/facebook\.com\/reel\/(\d+)/i)?.[1] || url.match(/[?&]v=(\d+)/i)?.[1];
+    if (reelId) {
+      candidates.push(`https://m.facebook.com/watch/?v=${reelId}`);
+      candidates.push(`https://mbasic.facebook.com/watch/?v=${reelId}`);
+    }
+  }
+
+  return [...new Set(candidates)];
+}
+
+function normalizeExtractedUrl(raw: string): string {
+  if (!raw) return '';
+
+  return raw
+    .replace(/\\u0025/gi, '%')
+    .replace(/\\u0026/gi, '&')
+    .replace(/\\u003D/gi, '=')
+    .replace(/\\u003A/gi, ':')
+    .replace(/\\u002F/gi, '/')
+    .replace(/\\\//g, '/')
+    .replace(/&amp;/g, '&')
+    .trim();
+}
+
+function decodeHtmlEntities(input: string): string {
+  return input
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
+async function tryJinaMirror(url: string): Promise<PageData | null> {
+  try {
+    const jinaUrl = `https://r.jina.ai/http://${url.replace(/^https?:\/\//i, '')}`;
+    const response = await fetch(jinaUrl, {
+      headers: { 'User-Agent': USER_AGENTS[0] },
+      signal: AbortSignal.timeout(12000),
+    });
+
+    if (!response.ok) return null;
+
+    const body = await response.text();
+    const videoSources = extractVideoSources(body, url);
+    const metadata = {
+      title: 'Unknown',
+      description: '',
+      thumbnail: '',
+      duration: '',
+      siteName: new URL(url).hostname,
+      type: 'video',
+      videoUrl: '',
+      resolution: '',
+      author: '',
+      keywords: '',
+    };
+
+    if (videoSources.length > 0) {
+      return { metadata, videoSources };
+    }
+  } catch {
+    // ignore mirror fallback failures
+  }
+
+  return null;
 }
 
 // ── Metadata extraction ──
@@ -241,16 +356,16 @@ function extractMetadata(html: string, url: string): Record<string, string> {
   const height = getMetaContent('og:video:height');
 
   return {
-    title: getMetaContent('og:title') || titleMatch?.[1]?.trim() || 'Unknown',
-    description: getMetaContent('og:description') || getMetaContent('description') || '',
-    thumbnail: getMetaContent('og:image') || '',
+    title: decodeHtmlEntities(getMetaContent('og:title') || titleMatch?.[1]?.trim() || 'Unknown'),
+    description: decodeHtmlEntities(getMetaContent('og:description') || getMetaContent('description') || ''),
+    thumbnail: normalizeExtractedUrl(getMetaContent('og:image') || ''),
     duration: getMetaContent('video:duration') || '',
-    siteName: getMetaContent('og:site_name') || new URL(url).hostname,
+    siteName: decodeHtmlEntities(getMetaContent('og:site_name') || new URL(url).hostname),
     type: getMetaContent('og:type') || 'video',
-    videoUrl,
+    videoUrl: normalizeExtractedUrl(videoUrl),
     resolution: width && height ? `${width}x${height}` : '',
-    author: getMetaContent('article:author') || getMetaContent('twitter:creator') || '',
-    keywords: getMetaContent('keywords') || '',
+    author: decodeHtmlEntities(getMetaContent('article:author') || getMetaContent('twitter:creator') || ''),
+    keywords: decodeHtmlEntities(getMetaContent('keywords') || ''),
   };
 }
 
@@ -374,45 +489,116 @@ function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
     } catch { /* ignore */ }
   }
 
+  // 12. Platform-specific JSON keys (helps with Facebook and similar players)
+  const keyedUrlPatterns = [
+    'playable_url', 'playable_url_quality_hd',
+    'browser_native_sd_url', 'browser_native_hd_url',
+    'sd_src', 'hd_src', 'sd_src_no_ratelimit', 'hd_src_no_ratelimit',
+    'video_url', 'video_playback_url',
+  ];
+
+  for (const key of keyedUrlPatterns) {
+    const pattern = new RegExp(`["']${key}["']\\s*:\\s*["']([^"']+)["']`, 'gi');
+    while ((m = pattern.exec(html)) !== null) {
+      const candidate = normalizeExtractedUrl(m[1]);
+      if (candidate.startsWith('http')) addSource(candidate);
+    }
+  }
+
+  // 13. Escaped CDN links without explicit file extensions
+  const escapedCdnRegex = /(https?:\\\\\/\\\\\/[^"'\\]+(?:fbcdn\.net|cdninstagram\.com|twimg\.com)[^"']*)/gi;
+  while ((m = escapedCdnRegex.exec(html)) !== null) {
+    const candidate = normalizeExtractedUrl(m[1]);
+    if (candidate.startsWith('http')) addSource(candidate);
+  }
+
   return sources;
 }
 
 // ── Source verification ──
 
-async function verifyVideoSources(sources: VideoSource[]): Promise<VideoSource[]> {
-  const verified: VideoSource[] = [];
-
-  const checks = sources.slice(0, 15).map(async (source) => {
-    try {
-      const res = await fetch(source.url, {
-        method: 'HEAD',
-        redirect: 'follow',
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-        signal: AbortSignal.timeout(6000),
-      });
-      if (res.ok) {
-        const ct = res.headers.get('content-type') || '';
-        const cl = res.headers.get('content-length');
-        if (ct.includes('video') || ct.includes('octet-stream') || ct.includes('mp4') || ct.includes('webm') ||
-            ct.includes('mpegurl') || ct.includes('dash') || ct.includes('matroska') ||
-            source.format === 'hls' || source.format === 'dash' ||
-            /\.(?:mp4|webm|mov|m3u8|mpd)/.test(source.url)) {
-          return {
-            ...source,
-            size: cl ? formatBytes(parseInt(cl)) : source.size,
-            format: source.format || guessFormat(ct, source.url),
-          };
-        }
-      }
-    } catch { /* unreachable */ }
-    return null;
-  });
-
+async function verifyVideoSources(sources: VideoSource[], refererUrl?: string): Promise<VideoSource[]> {
+  const checks = sources.slice(0, 20).map((source) => verifySingleSource(source, refererUrl));
   const results = await Promise.all(checks);
-  for (const r of results) {
-    if (r) verified.push(r);
+  return results.filter((r): r is VideoSource => !!r);
+}
+
+async function verifySingleSource(source: VideoSource, refererUrl?: string): Promise<VideoSource | null> {
+  const commonHeaders: Record<string, string> = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+  };
+
+  if (refererUrl) {
+    commonHeaders['Referer'] = refererUrl;
   }
-  return verified;
+
+  try {
+    const headRes = await fetch(source.url, {
+      method: 'HEAD',
+      redirect: 'follow',
+      headers: commonHeaders,
+      signal: AbortSignal.timeout(7000),
+    });
+
+    const headContentType = (headRes.headers.get('content-type') || '').toLowerCase();
+    const headContentLength = headRes.headers.get('content-length');
+
+    if (headRes.ok && isLikelyVideoSource(headContentType, source)) {
+      return {
+        ...source,
+        size: headContentLength ? formatBytes(parseInt(headContentLength)) : source.size,
+        format: source.format || guessFormat(headContentType, source.url),
+      };
+    }
+  } catch {
+    // Some hosts block HEAD, fallback to ranged GET below
+  }
+
+  try {
+    const getRes = await fetch(source.url, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: { ...commonHeaders, Range: 'bytes=0-1' },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    const ct = (getRes.headers.get('content-type') || '').toLowerCase();
+    const cl = getRes.headers.get('content-length');
+    const isPartial = getRes.status === 206 || getRes.status === 200;
+
+    if (isPartial && isLikelyVideoSource(ct, source)) {
+      return {
+        ...source,
+        size: cl ? formatBytes(parseInt(cl)) : source.size,
+        format: source.format || guessFormat(ct, source.url),
+      };
+    }
+  } catch {
+    // unreachable
+  }
+
+  return null;
+}
+
+function isLikelyVideoSource(contentType: string, source: VideoSource): boolean {
+  const ct = contentType.toLowerCase();
+  const url = source.url.toLowerCase();
+
+  return (
+    ct.includes('video') ||
+    ct.includes('octet-stream') ||
+    ct.includes('mp4') ||
+    ct.includes('webm') ||
+    ct.includes('mpegurl') ||
+    ct.includes('x-mpegurl') ||
+    ct.includes('vnd.apple.mpegurl') ||
+    ct.includes('dash') ||
+    ct.includes('matroska') ||
+    source.format === 'hls' ||
+    source.format === 'dash' ||
+    /\.(?:mp4|webm|mov|m3u8|mpd|m4v|flv|mkv|avi|ogv)(?:\?|$)/.test(url) ||
+    /(fbcdn\.net|cdninstagram\.com|twimg\.com)\/.+/.test(url)
+  );
 }
 
 function formatBytes(bytes: number): string {
@@ -423,12 +609,17 @@ function formatBytes(bytes: number): string {
 }
 
 function guessFormat(contentType: string, url: string): string {
-  if (contentType.includes('mp4') || url.includes('.mp4')) return 'mp4';
-  if (contentType.includes('webm') || url.includes('.webm')) return 'webm';
-  if (contentType.includes('mpegurl') || url.includes('.m3u8')) return 'hls';
-  if (contentType.includes('dash') || url.includes('.mpd')) return 'dash';
-  if (contentType.includes('ogg') || url.includes('.ogg')) return 'ogg';
-  if (contentType.includes('mov') || url.includes('.mov')) return 'mov';
-  if (contentType.includes('flv') || url.includes('.flv')) return 'flv';
+  const ct = contentType.toLowerCase();
+  const u = url.toLowerCase();
+
+  if (ct.includes('mp4') || u.includes('.mp4')) return 'mp4';
+  if (ct.includes('webm') || u.includes('.webm')) return 'webm';
+  if (ct.includes('mpegurl') || ct.includes('x-mpegurl') || ct.includes('vnd.apple.mpegurl') || u.includes('.m3u8')) return 'hls';
+  if (ct.includes('dash') || u.includes('.mpd')) return 'dash';
+  if (ct.includes('ogg') || u.includes('.ogg') || u.includes('.ogv')) return 'ogg';
+  if (ct.includes('quicktime') || u.includes('.mov')) return 'mov';
+  if (ct.includes('x-flv') || u.includes('.flv')) return 'flv';
+  if (u.includes('.mkv')) return 'mkv';
+  if (u.includes('.avi')) return 'avi';
   return 'mp4';
 }

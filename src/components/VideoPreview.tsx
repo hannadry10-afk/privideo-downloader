@@ -55,6 +55,8 @@ const VideoPreview = ({ result }: VideoPreviewProps) => {
     });
   }
 
+  const isFallbackOnly = result.type === 'metadata_only' && allSources.length > 0;
+
   return (
     <div className="w-full max-w-2xl mx-auto mt-8">
       <div className="glass rounded-2xl overflow-hidden">
@@ -123,6 +125,12 @@ const VideoPreview = ({ result }: VideoPreviewProps) => {
           {/* Download section */}
           {result.success && allSources.length > 0 && (
             <div className="space-y-2">
+              {isFallbackOnly && (
+                <div className="rounded-xl bg-secondary/50 border border-border p-3 text-xs text-muted-foreground">
+                  Raw stream links found from embedded players. Some hosts may block direct download, but opening in a new tab can still play.
+                </div>
+              )}
+
               {allSources.length > 1 && (
                 <p className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
                   <FileVideo className="h-4 w-4" />
@@ -139,7 +147,7 @@ const VideoPreview = ({ result }: VideoPreviewProps) => {
                   >
                     <span className="flex items-center gap-2 truncate">
                       <Download className="h-4 w-4 shrink-0" />
-                      <span className="truncate">{source.label}</span>
+                      <span className="truncate">{isFallbackOnly ? `Open / ${source.label}` : source.label}</span>
                     </span>
                     <div className="flex items-center gap-2 shrink-0">
                       {source.isAudio && (

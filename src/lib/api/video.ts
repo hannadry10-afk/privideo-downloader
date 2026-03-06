@@ -19,6 +19,7 @@ export interface VideoSource {
   format?: string;
   size?: string;
   type?: string;
+  verified?: boolean;
 }
 
 export interface PickerItem {
