@@ -549,12 +549,17 @@ function formatBytes(bytes: number): string {
 }
 
 function guessFormat(contentType: string, url: string): string {
-  if (contentType.includes('mp4') || url.includes('.mp4')) return 'mp4';
-  if (contentType.includes('webm') || url.includes('.webm')) return 'webm';
-  if (contentType.includes('mpegurl') || url.includes('.m3u8')) return 'hls';
-  if (contentType.includes('dash') || url.includes('.mpd')) return 'dash';
-  if (contentType.includes('ogg') || url.includes('.ogg')) return 'ogg';
-  if (contentType.includes('mov') || url.includes('.mov')) return 'mov';
-  if (contentType.includes('flv') || url.includes('.flv')) return 'flv';
+  const ct = contentType.toLowerCase();
+  const u = url.toLowerCase();
+
+  if (ct.includes('mp4') || u.includes('.mp4')) return 'mp4';
+  if (ct.includes('webm') || u.includes('.webm')) return 'webm';
+  if (ct.includes('mpegurl') || ct.includes('x-mpegurl') || ct.includes('vnd.apple.mpegurl') || u.includes('.m3u8')) return 'hls';
+  if (ct.includes('dash') || u.includes('.mpd')) return 'dash';
+  if (ct.includes('ogg') || u.includes('.ogg') || u.includes('.ogv')) return 'ogg';
+  if (ct.includes('quicktime') || u.includes('.mov')) return 'mov';
+  if (ct.includes('x-flv') || u.includes('.flv')) return 'flv';
+  if (u.includes('.mkv')) return 'mkv';
+  if (u.includes('.avi')) return 'avi';
   return 'mp4';
 }
