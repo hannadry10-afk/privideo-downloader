@@ -11,6 +11,20 @@ const Index = () => {
   const [result, setResult] = useState<VideoResult | null>(null);
   const { toast } = useToast();
 
+  // Simulated download counter: base + 70-100 per day since launch
+  const downloadCount = useMemo(() => {
+    const launchDate = new Date('2026-01-01');
+    const now = new Date();
+    const daysSinceLaunch = Math.max(0, Math.floor((now.getTime() - launchDate.getTime()) / 86400000));
+    // Deterministic pseudo-random per day (seeded by day count)
+    let total = 12847; // base number
+    for (let d = 0; d <= daysSinceLaunch; d++) {
+      const daily = 70 + ((d * 7 + 13) % 31); // 70-100 range
+      total += daily;
+    }
+    return total;
+  }, []);
+
   const handleFetch = async (url: string) => {
     setIsLoading(true);
     setResult(null);
@@ -46,6 +60,17 @@ const Index = () => {
       <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-accent/5 rounded-full blur-[100px]" />
 
       <div className="relative z-10 flex flex-col items-center px-4 py-16 md:py-24">
+        {/* Download counter */}
+        <div className="w-full max-w-3xl flex justify-end mb-4">
+          <div className="flex items-center gap-2 glass rounded-full px-4 py-1.5">
+            <Users className="h-4 w-4 text-primary" />
+            <span className="text-sm font-mono font-semibold text-foreground">
+              {downloadCount.toLocaleString()}
+            </span>
+            <span className="text-xs text-muted-foreground">downloads</span>
+          </div>
+        </div>
+
         {/* Hero */}
         <div className="flex items-center gap-2 glass rounded-full px-4 py-2 mb-8 animate-float">
           <Zap className="h-4 w-4 text-primary" />
@@ -103,6 +128,11 @@ const Index = () => {
             ))}
           </div>
         )}
+
+        {/* Footer */}
+        <footer className="mt-20 text-center text-sm text-muted-foreground">
+          © 2026 Privideo Downloader. All rights reserved.
+        </footer>
       </div>
     </div>
   );
