@@ -25,10 +25,18 @@ serve(async (req) => {
     const cobaltResult = await tryCobalt(url, pageData);
     if (cobaltResult) return jsonResponse(cobaltResult);
 
-    // Try Invidious for YouTube
+    // Try Invidious / Piped for YouTube
     if (isYouTube(url)) {
       const invResult = await tryInvidious(url, pageData);
       if (invResult) return jsonResponse(invResult);
+      const pipedResult = await tryPiped(url, pageData);
+      if (pipedResult) return jsonResponse(pipedResult);
+    }
+
+    // Try TikTok extraction
+    if (isTikTok(url)) {
+      const ttResult = await tryTikTok(url, pageData);
+      if (ttResult) return jsonResponse(ttResult);
     }
 
     // If we found video sources from scraping (or metadata video URL), verify and return
