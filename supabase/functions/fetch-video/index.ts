@@ -31,16 +31,21 @@ serve(async (req) => {
       if (invResult) return jsonResponse(invResult);
     }
 
-    // If we found video sources from scraping, verify and return
-    if (pageData.videoSources.length > 0) {
-      const verified = await verifyVideoSources(pageData.videoSources);
+    // If we found video sources from scraping (or metadata video URL), verify and return
+    const sourceCandidates = mergeUniqueSources(
+      pageData.videoSources,
+      pageData.metadata.videoUrl ? [{ url: pageData.metadata.videoUrl }] : [],
+    );
+
+    if (sourceCandidates.length > 0) {
+      const verified = await verifyVideoSources(sourceCandidates, url);
       if (verified.length > 0) {
         return jsonResponse({
           success: true,
           type: verified.length === 1 ? 'direct' : 'picker',
           url: verified.length === 1 ? verified[0].url : undefined,
           filename: verified.length === 1 ? generateFilename(pageData.metadata.title, verified[0]) : undefined,
-          picker: verified.length > 1 ? verified.map((s, i) => ({
+          picker: verified.length > 1 ? verified.map((s) => ({
             type: 'video', url: s.url, thumb: pageData.metadata.thumbnail,
             quality: s.quality, format: s.format, size: s.size,
           })) : undefined,
@@ -48,6 +53,14 @@ serve(async (req) => {
           videoSources: verified,
         });
       }
+
+      // Fallback: keep unverified raw links so frontend can still offer play/open options
+      return jsonResponse({
+        success: true,
+        type: 'metadata_only',
+        metadata: pageData.metadata,
+        videoSources: sourceCandidates,
+      });
     }
 
     // Return metadata only
@@ -55,7 +68,7 @@ serve(async (req) => {
       success: true,
       type: 'metadata_only',
       metadata: pageData.metadata,
-      videoSources: pageData.videoSources,
+      videoSources: [],
     });
 
   } catch (error) {
