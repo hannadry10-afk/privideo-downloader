@@ -10,6 +10,8 @@ import { useToast } from '@/hooks/use-toast';
 const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<VideoResult | null>(null);
+  const [fetchUrl, setFetchUrl] = useState('');
+  const [fetchError, setFetchError] = useState(false);
   const { toast } = useToast();
 
   // Simulated download counter: base + 70-100 per day since launch
