@@ -3,12 +3,15 @@ import { Download, Zap, Users } from 'lucide-react';
 import UrlInput from '@/components/UrlInput';
 import VideoPreview from '@/components/VideoPreview';
 import VideoSkeleton from '@/components/VideoSkeleton';
+import FetchLogger from '@/components/FetchLogger';
 import { fetchVideo, type VideoResult } from '@/lib/api/video';
 import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<VideoResult | null>(null);
+  const [fetchUrl, setFetchUrl] = useState('');
+  const [fetchError, setFetchError] = useState(false);
   const { toast } = useToast();
 
   // Simulated download counter: base + 70-100 per day since launch
@@ -28,12 +31,15 @@ const Index = () => {
   const handleFetch = async (url: string) => {
     setIsLoading(true);
     setResult(null);
+    setFetchUrl(url);
+    setFetchError(false);
 
     try {
       const data = await fetchVideo(url);
       setResult(data);
 
       if (!data.success) {
+        setFetchError(true);
         toast({
           title: 'Could not process video',
           description: data.error || 'Try a different URL or platform.',
@@ -42,6 +48,7 @@ const Index = () => {
       }
     } catch (error) {
       console.error('Error fetching video:', error);
+      setFetchError(true);
       toast({
         title: 'Connection error',
         description: 'Failed to connect to the server. Please try again.',
@@ -91,8 +98,15 @@ const Index = () => {
         {/* URL Input */}
         <UrlInput onSubmit={handleFetch} isLoading={isLoading} />
 
+        {/* Fetch Logger */}
+        <FetchLogger
+          isLoading={isLoading}
+          url={fetchUrl}
+          isDone={!!result}
+          hasError={fetchError}
+        />
+
         {/* Result */}
-        {isLoading && <VideoSkeleton />}
         {!isLoading && result && <VideoPreview result={result} />}
 
         {/* Features */}
