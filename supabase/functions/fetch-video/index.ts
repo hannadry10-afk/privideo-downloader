@@ -39,6 +39,18 @@ serve(async (req) => {
       if (ttResult) return jsonResponse(ttResult);
     }
 
+    // Try Twitter/X extraction
+    if (isTwitter(url)) {
+      const twResult = await tryTwitter(url, pageData);
+      if (twResult) return jsonResponse(twResult);
+    }
+
+    // Try Instagram extraction
+    if (isInstagram(url)) {
+      const igResult = await tryInstagram(url, pageData);
+      if (igResult) return jsonResponse(igResult);
+    }
+
     // If we found video sources from scraping (or metadata video URL), verify and return
     const sourceCandidates = mergeUniqueSources(
       pageData.videoSources,
