@@ -98,8 +98,15 @@ const Index = () => {
         {/* URL Input */}
         <UrlInput onSubmit={handleFetch} isLoading={isLoading} />
 
+        {/* Fetch Logger */}
+        <FetchLogger
+          isLoading={isLoading}
+          url={fetchUrl}
+          isDone={!!result}
+          hasError={fetchError}
+        />
+
         {/* Result */}
-        {isLoading && <VideoSkeleton />}
         {!isLoading && result && <VideoPreview result={result} />}
 
         {/* Features */}
