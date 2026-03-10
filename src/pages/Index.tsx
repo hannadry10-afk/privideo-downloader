@@ -3,6 +3,7 @@ import { Download, Zap, Users } from 'lucide-react';
 import UrlInput from '@/components/UrlInput';
 import VideoPreview from '@/components/VideoPreview';
 import VideoSkeleton from '@/components/VideoSkeleton';
+import FetchLogger from '@/components/FetchLogger';
 import { fetchVideo, type VideoResult } from '@/lib/api/video';
 import { useToast } from '@/hooks/use-toast';
 
