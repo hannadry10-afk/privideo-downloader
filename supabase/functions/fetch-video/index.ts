@@ -114,6 +114,14 @@ function isTikTok(url: string): boolean {
   return /(?:tiktok\.com|vm\.tiktok\.com)/i.test(url);
 }
 
+function isTwitter(url: string): boolean {
+  return /(?:twitter\.com|x\.com)\/\w+\/status/i.test(url);
+}
+
+function isInstagram(url: string): boolean {
+  return /(?:instagram\.com|instagr\.am)\/(?:p|reel|reels|tv)\//i.test(url);
+}
+
 function generateFilename(title: string, source: VideoSource): string {
   const safeName = (title || 'video').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().replace(/\s+/g, '_').slice(0, 80);
   const ext = source.format || 'mp4';
