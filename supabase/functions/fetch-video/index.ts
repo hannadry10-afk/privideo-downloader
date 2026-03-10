@@ -39,6 +39,18 @@ serve(async (req) => {
       if (ttResult) return jsonResponse(ttResult);
     }
 
+    // Try Twitter/X extraction
+    if (isTwitter(url)) {
+      const twResult = await tryTwitter(url, pageData);
+      if (twResult) return jsonResponse(twResult);
+    }
+
+    // Try Instagram extraction
+    if (isInstagram(url)) {
+      const igResult = await tryInstagram(url, pageData);
+      if (igResult) return jsonResponse(igResult);
+    }
+
     // If we found video sources from scraping (or metadata video URL), verify and return
     const sourceCandidates = mergeUniqueSources(
       pageData.videoSources,
@@ -100,6 +112,14 @@ function isYouTube(url: string): boolean {
 
 function isTikTok(url: string): boolean {
   return /(?:tiktok\.com|vm\.tiktok\.com)/i.test(url);
+}
+
+function isTwitter(url: string): boolean {
+  return /(?:twitter\.com|x\.com)\/\w+\/status/i.test(url);
+}
+
+function isInstagram(url: string): boolean {
+  return /(?:instagram\.com|instagr\.am)\/(?:p|reel|reels|tv)\//i.test(url);
 }
 
 function generateFilename(title: string, source: VideoSource): string {
@@ -397,6 +417,323 @@ async function tryTikTok(url: string, pageData: PageData): Promise<Record<string
     }
   } catch (e) {
     console.log('TikTok mobile scrape failed:', e);
+  }
+
+  return null;
+}
+
+// ── Twitter/X extraction ──
+
+async function tryTwitter(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  // Strategy 1: Use nitter instances to get direct video URLs
+  const nitterInstances = [
+    'https://nitter.privacydev.net',
+    'https://nitter.poast.org',
+    'https://nitter.cz',
+  ];
+
+  const tweetMatch = url.match(/(?:twitter\.com|x\.com)\/(\w+)\/status\/(\d+)/i);
+  if (!tweetMatch) return null;
+  const [, user, tweetId] = tweetMatch;
+
+  for (const instance of nitterInstances) {
+    try {
+      const nitterUrl = `${instance}/${user}/status/${tweetId}`;
+      const res = await fetch(nitterUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'text/html',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) continue;
+      const html = await res.text();
+
+      const sources: VideoSource[] = [];
+      // Nitter embeds video as <source> or <video> tags
+      const srcRegex = /<source[^>]*src=["']([^"']+)["'][^>]*type=["']video\/([^"']+)["']/gi;
+      let m;
+      while ((m = srcRegex.exec(html)) !== null) {
+        let videoUrl = m[1];
+        if (videoUrl.startsWith('/')) videoUrl = `${instance}${videoUrl}`;
+        sources.push({ url: videoUrl, quality: 'Direct', format: m[2] || 'mp4', type: 'combined' });
+      }
+
+      // Also try direct video tag src
+      const videoSrc = html.match(/<video[^>]*src=["']([^"']+)["']/i);
+      if (videoSrc) {
+        let vUrl = videoSrc[1];
+        if (vUrl.startsWith('/')) vUrl = `${instance}${vUrl}`;
+        sources.push({ url: vUrl, quality: 'Direct', format: 'mp4', type: 'combined' });
+      }
+
+      if (sources.length > 0) {
+        const titleMatch = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']*)["']/i);
+        const meta = {
+          ...pageData.metadata,
+          title: titleMatch?.[1]?.slice(0, 100) || pageData.metadata.title,
+          author: user,
+          siteName: 'Twitter / X',
+        };
+        return {
+          success: true,
+          type: sources.length === 1 ? 'direct' : 'picker',
+          url: sources.length === 1 ? sources[0].url : undefined,
+          filename: sources.length === 1 ? generateFilename(meta.title, sources[0]) : undefined,
+          picker: sources.length > 1 ? sources.map(s => ({ type: 'video', url: s.url, thumb: meta.thumbnail, quality: s.quality, format: s.format })) : undefined,
+          metadata: meta,
+          videoSources: sources,
+        };
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  // Strategy 2: Use fxtwitter.com API (returns JSON with video info)
+  try {
+    const fxRes = await fetch(`https://api.fxtwitter.com/${user}/status/${tweetId}`, {
+      headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (fxRes.ok) {
+      const fxData = await fxRes.json();
+      const tweet = fxData.tweet;
+      if (tweet?.media?.videos?.length > 0) {
+        const sources: VideoSource[] = [];
+        for (const vid of tweet.media.videos) {
+          if (vid.url) {
+            sources.push({ url: vid.url, quality: vid.height ? `${vid.height}p` : 'HD', format: 'mp4', type: 'combined' });
+          }
+        }
+        // Also check for all variants
+        for (const vid of tweet.media.videos) {
+          if (vid.variants) {
+            for (const v of vid.variants) {
+              if (v.url && v.content_type?.includes('video')) {
+                sources.push({ url: v.url, quality: v.bitrate ? `${Math.round(v.bitrate / 1000)}kbps` : 'Direct', format: 'mp4', type: 'combined' });
+              }
+            }
+          }
+        }
+        if (sources.length > 0) {
+          const meta = {
+            ...pageData.metadata,
+            title: tweet.text?.slice(0, 100) || pageData.metadata.title,
+            author: tweet.author?.name || user,
+            thumbnail: tweet.media?.photos?.[0]?.url || tweet.media?.videos?.[0]?.thumbnail_url || pageData.metadata.thumbnail,
+            siteName: 'Twitter / X',
+          };
+          return {
+            success: true,
+            type: sources.length === 1 ? 'direct' : 'picker',
+            url: sources.length === 1 ? sources[0].url : undefined,
+            filename: sources.length === 1 ? generateFilename(meta.title, sources[0]) : undefined,
+            picker: sources.length > 1 ? sources.map(s => ({ type: 'video', url: s.url, thumb: meta.thumbnail, quality: s.quality, format: s.format })) : undefined,
+            metadata: meta,
+            videoSources: sources,
+          };
+        }
+      }
+    }
+  } catch (e) {
+    console.log('fxtwitter fallback failed:', e);
+  }
+
+  // Strategy 3: Use vxtwitter/fixupx embed page scraping
+  try {
+    const vxUrl = `https://api.vxtwitter.com/${user}/status/${tweetId}`;
+    const res = await fetch(vxUrl, {
+      headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.media_extended) {
+        const sources: VideoSource[] = [];
+        for (const media of data.media_extended) {
+          if (media.type === 'video' && media.url) {
+            sources.push({ url: media.url, quality: media.height ? `${media.height}p` : 'HD', format: 'mp4', type: 'combined' });
+          }
+        }
+        if (sources.length > 0) {
+          const meta = {
+            ...pageData.metadata,
+            title: data.text?.slice(0, 100) || pageData.metadata.title,
+            author: data.user_name || user,
+            thumbnail: data.media_extended?.[0]?.thumbnail_url || pageData.metadata.thumbnail,
+            siteName: 'Twitter / X',
+          };
+          return {
+            success: true,
+            type: sources.length === 1 ? 'direct' : 'picker',
+            url: sources.length === 1 ? sources[0].url : undefined,
+            filename: sources.length === 1 ? generateFilename(meta.title, sources[0]) : undefined,
+            picker: sources.length > 1 ? sources.map(s => ({ type: 'video', url: s.url, thumb: meta.thumbnail, quality: s.quality, format: s.format })) : undefined,
+            metadata: meta,
+            videoSources: sources,
+          };
+        }
+      }
+    }
+  } catch (e) {
+    console.log('vxtwitter fallback failed:', e);
+  }
+
+  return null;
+}
+
+// ── Instagram extraction ──
+
+async function tryInstagram(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  // Strategy 1: Use ddinstagram (embed proxy)
+  try {
+    const igUrl = url.replace(/(?:www\.)?instagram\.com/, 'ddinstagram.com');
+    const res = await fetch(igUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Accept': 'text/html',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(12000),
+    });
+    if (res.ok) {
+      const html = await res.text();
+      const sources: VideoSource[] = [];
+
+      // Look for og:video
+      const ogVideo = html.match(/<meta[^>]*property=["']og:video(?::secure_url)?["'][^>]*content=["']([^"']+)["']/i);
+      if (ogVideo) sources.push({ url: normalizeExtractedUrl(ogVideo[1]), quality: 'HD', format: 'mp4', type: 'combined' });
+
+      // Look for direct video links
+      const videoRegex = /["'](https?:\/\/[^"'\s]+(?:cdninstagram\.com|fbcdn\.net)[^"'\s]*\.mp4[^"'\s]*)["']/gi;
+      let m;
+      while ((m = videoRegex.exec(html)) !== null) {
+        sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: 'mp4', type: 'combined' });
+      }
+
+      if (sources.length > 0) {
+        const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']*)["']/i);
+        const ogThumb = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']*)["']/i);
+        const meta = {
+          ...pageData.metadata,
+          title: ogTitle?.[1] || pageData.metadata.title,
+          thumbnail: ogThumb?.[1] || pageData.metadata.thumbnail,
+          siteName: 'Instagram',
+        };
+        const unique = mergeUniqueSources(sources);
+        return {
+          success: true,
+          type: unique.length === 1 ? 'direct' : 'picker',
+          url: unique.length === 1 ? unique[0].url : undefined,
+          filename: unique.length === 1 ? generateFilename(meta.title, unique[0]) : undefined,
+          picker: unique.length > 1 ? unique.map((s, i) => ({ type: 'video', url: s.url, thumb: meta.thumbnail, quality: s.quality || `Option ${i + 1}`, format: s.format })) : undefined,
+          metadata: meta,
+          videoSources: unique,
+        };
+      }
+    }
+  } catch (e) {
+    console.log('ddinstagram failed:', e);
+  }
+
+  // Strategy 2: Use imginn.com as proxy
+  try {
+    const shortcode = url.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/)?.[1];
+    if (shortcode) {
+      const imginnUrl = `https://imginn.com/p/${shortcode}/`;
+      const res = await fetch(imginnUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'text/html',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.ok) {
+        const html = await res.text();
+        const sources: VideoSource[] = [];
+
+        const videoSrcRegex = /["'](https?:\/\/[^"'\s]+\.mp4[^"'\s]*)["']/gi;
+        let m;
+        while ((m = videoSrcRegex.exec(html)) !== null) {
+          sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: 'mp4', type: 'combined' });
+        }
+
+        // data-video attributes
+        const dataVideoRegex = /data-video=["'](https?:\/\/[^"']+)["']/gi;
+        while ((m = dataVideoRegex.exec(html)) !== null) {
+          sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: 'mp4', type: 'combined' });
+        }
+
+        if (sources.length > 0) {
+          const unique = mergeUniqueSources(sources);
+          return {
+            success: true,
+            type: unique.length === 1 ? 'direct' : 'picker',
+            url: unique.length === 1 ? unique[0].url : undefined,
+            filename: unique.length === 1 ? generateFilename(pageData.metadata.title, unique[0]) : undefined,
+            picker: unique.length > 1 ? unique.map((s, i) => ({ type: 'video', url: s.url, thumb: pageData.metadata.thumbnail, quality: s.quality || `Option ${i + 1}`, format: s.format })) : undefined,
+            metadata: { ...pageData.metadata, siteName: 'Instagram' },
+            videoSources: unique,
+          };
+        }
+      }
+    }
+  } catch (e) {
+    console.log('imginn failed:', e);
+  }
+
+  // Strategy 3: Embed page scraping via Instagram's embed endpoint
+  try {
+    const shortcode = url.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/)?.[1];
+    if (shortcode) {
+      const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/`;
+      const res = await fetch(embedUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'text/html',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.ok) {
+        const html = await res.text();
+        const sources: VideoSource[] = [];
+
+        // Video URL in embed JSON
+        const videoUrlMatch = html.match(/["']video_url["']\s*:\s*["']([^"']+)["']/i);
+        if (videoUrlMatch) {
+          sources.push({ url: normalizeExtractedUrl(videoUrlMatch[1]), quality: 'HD', format: 'mp4', type: 'combined' });
+        }
+
+        // Direct CDN links
+        const cdnRegex = /(https?:\/\/[^"'\s\\]+(?:cdninstagram\.com|fbcdn\.net)[^"'\s\\]*)/gi;
+        let m;
+        while ((m = cdnRegex.exec(html)) !== null) {
+          const candidate = normalizeExtractedUrl(m[1]);
+          if (/\.mp4|video/i.test(candidate)) {
+            sources.push({ url: candidate, quality: 'Direct', format: 'mp4', type: 'combined' });
+          }
+        }
+
+        if (sources.length > 0) {
+          const unique = mergeUniqueSources(sources);
+          return {
+            success: true,
+            type: unique.length === 1 ? 'direct' : 'picker',
+            url: unique.length === 1 ? unique[0].url : undefined,
+            filename: unique.length === 1 ? generateFilename(pageData.metadata.title, unique[0]) : undefined,
+            picker: unique.length > 1 ? unique.map((s, i) => ({ type: 'video', url: s.url, thumb: pageData.metadata.thumbnail, quality: s.quality || `Option ${i + 1}`, format: s.format })) : undefined,
+            metadata: { ...pageData.metadata, siteName: 'Instagram' },
+            videoSources: unique,
+          };
+        }
+      }
+    }
+  } catch (e) {
+    console.log('Instagram embed scrape failed:', e);
   }
 
   return null;
