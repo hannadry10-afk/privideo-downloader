@@ -31,12 +31,15 @@ const Index = () => {
   const handleFetch = async (url: string) => {
     setIsLoading(true);
     setResult(null);
+    setFetchUrl(url);
+    setFetchError(false);
 
     try {
       const data = await fetchVideo(url);
       setResult(data);
 
       if (!data.success) {
+        setFetchError(true);
         toast({
           title: 'Could not process video',
           description: data.error || 'Try a different URL or platform.',
@@ -45,6 +48,7 @@ const Index = () => {
       }
     } catch (error) {
       console.error('Error fetching video:', error);
+      setFetchError(true);
       toast({
         title: 'Connection error',
         description: 'Failed to connect to the server. Please try again.',
