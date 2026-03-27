@@ -2,15 +2,15 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Download, Zap, Users } from 'lucide-react';
 import UrlInput from '@/components/UrlInput';
-import FetchLogger from '@/components/FetchLogger';
+import { Progress } from '@/components/ui/progress';
 import { fetchVideo, type VideoResult } from '@/lib/api/video';
 import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<VideoResult | null>(null);
-  const [fetchUrl, setFetchUrl] = useState('');
   const [fetchError, setFetchError] = useState(false);
+  const [progress, setProgress] = useState(0);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -29,20 +29,28 @@ const Index = () => {
   const handleFetch = async (url: string) => {
     setIsLoading(true);
     setResult(null);
-    setFetchUrl(url);
     setFetchError(false);
+    setProgress(0);
+
+    // Simulate progress
+    const interval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 90) return prev;
+        return prev + Math.random() * 12 + 3;
+      });
+    }, 400);
 
     try {
       const data = await fetchVideo(url);
       setResult(data);
+      setProgress(100);
+      clearInterval(interval);
 
       if (data.success) {
-        // Generate random UID and navigate to watch page
         const uid = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
-        // Small delay so the logger shows "complete"
         setTimeout(() => {
           navigate(`/watch/${uid}`, { state: { result: data } });
-        }, 1800);
+        }, 800);
       } else {
         setFetchError(true);
         toast({
@@ -54,6 +62,8 @@ const Index = () => {
     } catch (error) {
       console.error('Error fetching video:', error);
       setFetchError(true);
+      setProgress(100);
+      clearInterval(interval);
       toast({
         title: 'Connection error',
         description: 'Failed to connect to the server. Please try again.',
@@ -103,13 +113,15 @@ const Index = () => {
         {/* URL Input */}
         <UrlInput onSubmit={handleFetch} isLoading={isLoading} />
 
-        {/* Fetch Logger */}
-        <FetchLogger
-          isLoading={isLoading}
-          url={fetchUrl}
-          isDone={!!result}
-          hasError={fetchError}
-        />
+        {/* Loading Progress Bar */}
+        {isLoading && (
+          <div className="w-full max-w-2xl mx-auto mt-6 space-y-2">
+            <Progress value={progress} className="h-2 bg-secondary/50" />
+            <p className="text-xs text-center text-muted-foreground font-mono animate-pulse">
+              Fetching video data...
+            </p>
+           </div>
+        )}
 
         {/* Features */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mt-12 md:mt-20 w-full max-w-3xl">
