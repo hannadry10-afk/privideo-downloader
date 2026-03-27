@@ -113,16 +113,15 @@ const Index = () => {
         {/* URL Input */}
         <UrlInput onSubmit={handleFetch} isLoading={isLoading} />
 
-        {/* Fetch Logger */}
-        <FetchLogger
-          isLoading={isLoading}
-          url={fetchUrl}
-          isDone={!!result}
-          hasError={fetchError}
-        />
-
-        {/* Features */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mt-12 md:mt-20 w-full max-w-3xl">
+        {/* Loading Progress Bar */}
+        {isLoading && (
+          <div className="w-full max-w-2xl mx-auto mt-6 space-y-2">
+            <Progress value={progress} className="h-2 bg-secondary/50" />
+            <p className="text-xs text-center text-muted-foreground font-mono animate-pulse">
+              Fetching video data...
+            </p>
+          </div>
+        )}
           {[
             {
               icon: Download,
