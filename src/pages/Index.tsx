@@ -29,20 +29,28 @@ const Index = () => {
   const handleFetch = async (url: string) => {
     setIsLoading(true);
     setResult(null);
-    setFetchUrl(url);
     setFetchError(false);
+    setProgress(0);
+
+    // Simulate progress
+    const interval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 90) return prev;
+        return prev + Math.random() * 12 + 3;
+      });
+    }, 400);
 
     try {
       const data = await fetchVideo(url);
       setResult(data);
+      setProgress(100);
+      clearInterval(interval);
 
       if (data.success) {
-        // Generate random UID and navigate to watch page
         const uid = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
-        // Small delay so the logger shows "complete"
         setTimeout(() => {
           navigate(`/watch/${uid}`, { state: { result: data } });
-        }, 1800);
+        }, 800);
       } else {
         setFetchError(true);
         toast({
@@ -54,6 +62,8 @@ const Index = () => {
     } catch (error) {
       console.error('Error fetching video:', error);
       setFetchError(true);
+      setProgress(100);
+      clearInterval(interval);
       toast({
         title: 'Connection error',
         description: 'Failed to connect to the server. Please try again.',
