@@ -121,7 +121,9 @@ const Index = () => {
               Fetching video data...
             </p>
           </div>
-        )}
+
+        {/* Features */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mt-12 md:mt-20 w-full max-w-3xl">
           {[
             {
               icon: Download,
