@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Download, Zap, Users } from 'lucide-react';
 import UrlInput from '@/components/UrlInput';
-import FetchLogger from '@/components/FetchLogger';
+import { Progress } from '@/components/ui/progress';
 import { fetchVideo, type VideoResult } from '@/lib/api/video';
 import { useToast } from '@/hooks/use-toast';
 
