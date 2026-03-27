@@ -9,8 +9,8 @@ import { useToast } from '@/hooks/use-toast';
 const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<VideoResult | null>(null);
-  const [fetchUrl, setFetchUrl] = useState('');
   const [fetchError, setFetchError] = useState(false);
+  const [progress, setProgress] = useState(0);
   const { toast } = useToast();
   const navigate = useNavigate();
 
