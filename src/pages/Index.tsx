@@ -96,7 +96,25 @@ const Index = () => {
 
       <div className="relative z-10 flex flex-col items-center px-4 py-8 md:py-24">
         {/* Download counter */}
-        <div className="w-full max-w-3xl flex justify-end mb-3">
+        <div className="w-full max-w-3xl flex justify-between items-center mb-3">
+          {/* Auth */}
+          {user ? (
+            <div className="flex items-center gap-2">
+              <span className="glass rounded-full px-3 py-1 text-xs flex items-center gap-1.5">
+                <User className="h-3 w-3 text-primary" />
+                <span className="text-muted-foreground truncate max-w-[120px]">{user.email}</span>
+              </span>
+              <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={async () => { await supabase.auth.signOut(); }}>
+                <LogOut className="h-3 w-3 mr-1" /> Logout
+              </Button>
+            </div>
+          ) : (
+            <Link to="/auth">
+              <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground gap-1.5">
+                <LogIn className="h-3 w-3" /> Sign in for Pro
+              </Button>
+            </Link>
+          )}
           <div className="flex items-center gap-1.5 glass rounded-full px-3 py-1">
             <Users className="h-3.5 w-3.5 text-primary" />
             <span className="text-xs font-mono font-semibold text-foreground">
