@@ -7,45 +7,69 @@
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://www.incognito-zone.xyz/youtube-downloader</loc>
+    <loc>https://www.incognito-zone.xyz/#how-it-works</loc>
     <lastmod>2026-03-28</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
+    <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.incognito-zone.xyz/tiktok-downloader</loc>
+    <loc>https://www.incognito-zone.xyz/#supported-platforms</loc>
     <lastmod>2026-03-28</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
+    <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.incognito-zone.xyz/facebook-downloader</loc>
-    <lastmod>2026-03-28</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://www.incognito-zone.xyz/instagram-downloader</loc>
-    <lastmod>2026-03-28</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://www.incognito-zone.xyz/twitter-downloader</loc>
-    <lastmod>2026-03-28</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://www.incognito-zone.xyz/video-downloader</loc>
-    <lastmod>2026-03-28</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://www.incognito-zone.xyz/auth</loc>
+    <loc>https://www.incognito-zone.xyz/#faq</loc>
     <lastmod>2026-03-28</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://www.incognito-zone.xyz/#youtube-downloader</loc>
+    <lastmod>2026-03-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://www.incognito-zone.xyz/#tiktok-downloader</loc>
+    <lastmod>2026-03-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://www.incognito-zone.xyz/#facebook-downloader</loc>
+    <lastmod>2026-03-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://www.incognito-zone.xyz/#instagram-downloader</loc>
+    <lastmod>2026-03-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://www.incognito-zone.xyz/#twitter-downloader</loc>
+    <lastmod>2026-03-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://www.incognito-zone.xyz/#free-video-downloader</loc>
+    <lastmod>2026-03-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.incognito-zone.xyz/#hd-video-download</loc>
+    <lastmod>2026-03-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.incognito-zone.xyz/#online-video-saver</loc>
+    <lastmod>2026-03-28</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
   </url>
 </urlset>

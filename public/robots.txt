@@ -4,8 +4,11 @@ Disallow: /watch/
 
 Sitemap: https://www.incognito-zone.xyz/sitemap.xml
 
+# Crawl optimization
 User-agent: Googlebot
-Crawl-delay: 2
+Allow: /
+Crawl-delay: 1
 
 User-agent: Bingbot
-Crawl-delay: 5
+Allow: /
+Crawl-delay: 2

@@ -1,31 +1,18 @@
-import { useState, useMemo, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Download, Zap, Users, LogIn, LogOut, User } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Download, Zap, Users } from 'lucide-react';
 import UrlInput from '@/components/UrlInput';
 import { Progress } from '@/components/ui/progress';
-import { Button } from '@/components/ui/button';
 import { fetchVideo, type VideoResult } from '@/lib/api/video';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
 
 const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<VideoResult | null>(null);
   const [fetchError, setFetchError] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [user, setUser] = useState<any>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      setUser(session?.user ?? null);
-    });
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
 
   const downloadCount = useMemo(() => {
     const launchDate = new Date('2026-01-01');
@@ -96,25 +83,7 @@ const Index = () => {
 
       <div className="relative z-10 flex flex-col items-center px-4 py-8 md:py-24">
         {/* Download counter */}
-        <div className="w-full max-w-3xl flex justify-between items-center mb-3">
-          {/* Auth */}
-          {user ? (
-            <div className="flex items-center gap-2">
-              <span className="glass rounded-full px-3 py-1 text-xs flex items-center gap-1.5">
-                <User className="h-3 w-3 text-primary" />
-                <span className="text-muted-foreground truncate max-w-[120px]">{user.email}</span>
-              </span>
-              <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={async () => { await supabase.auth.signOut(); }}>
-                <LogOut className="h-3 w-3 mr-1" /> Logout
-              </Button>
-            </div>
-          ) : (
-            <Link to="/auth">
-              <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground gap-1.5">
-                <LogIn className="h-3 w-3" /> Sign in for Pro
-              </Button>
-            </Link>
-          )}
+        <div className="w-full max-w-3xl flex justify-end mb-3">
           <div className="flex items-center gap-1.5 glass rounded-full px-3 py-1">
             <Users className="h-3.5 w-3.5 text-primary" />
             <span className="text-xs font-mono font-semibold text-foreground">
