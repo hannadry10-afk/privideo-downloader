@@ -1008,6 +1008,7 @@ function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
     try {
       const resolved = rawUrl.startsWith('http') ? rawUrl : new URL(rawUrl, pageUrl).href;
       if (seenUrls.has(resolved)) return;
+      if (isAdOrJunkVideo(resolved)) return;
       seenUrls.add(resolved);
       sources.push({ url: resolved, quality, format });
     } catch { /* invalid URL */ }
