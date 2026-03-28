@@ -146,12 +146,110 @@ function mergeUniqueSources(...groups: VideoSource[][]): VideoSource[] {
       if (!source?.url) continue;
       const normalized = normalizeExtractedUrl(source.url);
       if (!normalized || seen.has(normalized)) continue;
+      if (isAdOrJunkVideo(normalized)) continue;
       seen.add(normalized);
       merged.push({ ...source, url: normalized });
     }
   }
 
   return merged;
+}
+
+// ── Ad / junk / intro video filtering ──
+
+const AD_DOMAIN_PATTERNS = [
+  /doubleclick\.net/i,
+  /googlesyndication\.com/i,
+  /googleadservices\.com/i,
+  /googleads\.g\.doubleclick/i,
+  /adnxs\.com/i,
+  /adsrvr\.org/i,
+  /adcolony\.com/i,
+  /advertising\.com/i,
+  /outbrain\.com/i,
+  /taboola\.com/i,
+  /criteo\.com/i,
+  /moatads\.com/i,
+  /serving-sys\.com/i,
+  /teads\.tv/i,
+  /pubmatic\.com/i,
+  /rubiconproject\.com/i,
+  /openx\.net/i,
+  /spotxchange\.com/i,
+  /springserve\.com/i,
+  /innovid\.com/i,
+  /imasdk\.googleapis\.com/i,
+  /google\.com\/pagead/i,
+  /amazon-adsystem\.com/i,
+  /ads\.yahoo\.com/i,
+  /adskeeper\.co/i,
+  /mgid\.com/i,
+  /revive-adserver/i,
+  /flash\.player/i,
+];
+
+const AD_PATH_PATTERNS = [
+  /\/ads?\//i,
+  /\/advert/i,
+  /\/sponsor/i,
+  /\/promo(?:tion)?s?\//i,
+  /\/preroll/i,
+  /\/midroll/i,
+  /\/postroll/i,
+  /\/bumper/i,
+  /\/intro[-_]?(?:video|clip|logo)/i,
+  /\/outro[-_]?(?:video|clip|logo)/i,
+  /\/watermark/i,
+  /\/overlay/i,
+  /\/pixel/i,
+  /\/tracking/i,
+  /\/beacon/i,
+  /\/impression/i,
+  /\/vast(?:\.xml|\?)/i,
+  /\/vpaid/i,
+  /\/vmap/i,
+  /[?&]ad(?:_|%5F)?(?:id|unit|slot|tag|type)=/i,
+  /[?&](?:click|imp)_?(?:url|tracker)=/i,
+];
+
+const AD_FILENAME_PATTERNS = [
+  /^(?:ad|ads|advert|advertisement|sponsor|promo|bumper|intro|outro|logo|watermark|preroll|midroll|postroll)[-_.]?\d*\.(?:mp4|webm|mov)/i,
+  /[-_](?:ad|ads|advert|sponsor|promo|bumper|preroll|midroll|postroll)[-_.]?\d*\.(?:mp4|webm|mov)/i,
+];
+
+function isAdOrJunkVideo(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const fullUrl = parsed.href.toLowerCase();
+    const hostname = parsed.hostname.toLowerCase();
+    const pathname = parsed.pathname.toLowerCase();
+    const filename = pathname.split('/').pop() || '';
+
+    // Check ad domains
+    for (const pattern of AD_DOMAIN_PATTERNS) {
+      if (pattern.test(hostname) || pattern.test(fullUrl)) return true;
+    }
+
+    // Check ad paths
+    for (const pattern of AD_PATH_PATTERNS) {
+      if (pattern.test(pathname) || pattern.test(parsed.search)) return true;
+    }
+
+    // Check ad filenames
+    for (const pattern of AD_FILENAME_PATTERNS) {
+      if (pattern.test(filename)) return true;
+    }
+
+    // Filter tracking pixels (very small files typically < 5 chars in name, .gif/.png/.jpg)
+    if (/^[a-z0-9]{1,4}\.(gif|png|jpg|jpeg)$/i.test(filename)) return true;
+
+    // Filter VAST/VPAID ad tags
+    if (/vast|vpaid|vmap/i.test(fullUrl) && /\.xml|tag|serve/i.test(fullUrl)) return true;
+
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 // ── Cobalt ──
