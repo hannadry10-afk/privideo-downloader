@@ -13,8 +13,19 @@ const Index = () => {
   const [result, setResult] = useState<VideoResult | null>(null);
   const [fetchError, setFetchError] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [user, setUser] = useState<any>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+      setUser(session?.user ?? null);
+    });
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   const downloadCount = useMemo(() => {
     const launchDate = new Date('2026-01-01');
