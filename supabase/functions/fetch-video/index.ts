@@ -21,11 +21,11 @@ serve(async (req) => {
     // Fetch page with multiple user-agent strategies
     const pageData = await fetchPageDataWithRetry(url);
 
-    // Try cobalt API first (supports many platforms)
-    const cobaltResult = await tryCobalt(url, pageData);
+    // Try cobalt API first (multiple instances)
+    const cobaltResult = await tryCobaltMulti(url, pageData);
     if (cobaltResult) return jsonResponse(cobaltResult);
 
-    // Try Invidious / Piped for YouTube
+    // Platform-specific extractors
     if (isYouTube(url)) {
       const invResult = await tryInvidious(url, pageData);
       if (invResult) return jsonResponse(invResult);
@@ -33,29 +33,55 @@ serve(async (req) => {
       if (pipedResult) return jsonResponse(pipedResult);
     }
 
-    // Try TikTok extraction
     if (isTikTok(url)) {
       const ttResult = await tryTikTok(url, pageData);
       if (ttResult) return jsonResponse(ttResult);
     }
 
-    // Try Twitter/X extraction
     if (isTwitter(url)) {
       const twResult = await tryTwitter(url, pageData);
       if (twResult) return jsonResponse(twResult);
     }
 
-    // Try Instagram extraction
     if (isInstagram(url)) {
       const igResult = await tryInstagram(url, pageData);
       if (igResult) return jsonResponse(igResult);
     }
 
-    // If we found video sources from scraping (or metadata video URL), verify and return
-    const sourceCandidates = mergeUniqueSources(
+    if (isDailymotion(url)) {
+      const dmResult = await tryDailymotion(url, pageData);
+      if (dmResult) return jsonResponse(dmResult);
+    }
+
+    if (isVimeo(url)) {
+      const vimResult = await tryVimeo(url, pageData);
+      if (vimResult) return jsonResponse(vimResult);
+    }
+
+    if (isRumble(url)) {
+      const rResult = await tryRumble(url, pageData);
+      if (rResult) return jsonResponse(rResult);
+    }
+
+    if (isStreamable(url)) {
+      const stResult = await tryStreamable(url, pageData);
+      if (stResult) return jsonResponse(stResult);
+    }
+
+    if (isRedditVideo(url)) {
+      const rdResult = await tryReddit(url, pageData);
+      if (rdResult) return jsonResponse(rdResult);
+    }
+
+    // Deep iframe scraping for unknown sites
+    const deepResult = await tryDeepIframeScrape(url, pageData);
+    if (deepResult) return jsonResponse(deepResult);
+
+    // Filter and verify scraped sources
+    const sourceCandidates = filterAdSources(mergeUniqueSources(
       pageData.videoSources,
       pageData.metadata.videoUrl ? [{ url: pageData.metadata.videoUrl }] : [],
-    );
+    ));
 
     if (sourceCandidates.length > 0) {
       const verified = await verifyVideoSources(sourceCandidates, url);
@@ -74,7 +100,6 @@ serve(async (req) => {
         });
       }
 
-      // Fallback: keep unverified raw links so frontend can still offer play/open options
       return jsonResponse({
         success: true,
         type: 'metadata_only',
@@ -83,7 +108,6 @@ serve(async (req) => {
       });
     }
 
-    // Return metadata only
     return jsonResponse({
       success: true,
       type: 'metadata_only',
@@ -106,21 +130,15 @@ function jsonResponse(data: unknown, status = 200) {
   });
 }
 
-function isYouTube(url: string): boolean {
-  return /(?:youtube\.com|youtu\.be|youtube-nocookie\.com)/i.test(url);
-}
-
-function isTikTok(url: string): boolean {
-  return /(?:tiktok\.com|vm\.tiktok\.com)/i.test(url);
-}
-
-function isTwitter(url: string): boolean {
-  return /(?:twitter\.com|x\.com)\/\w+\/status/i.test(url);
-}
-
-function isInstagram(url: string): boolean {
-  return /(?:instagram\.com|instagr\.am)\/(?:p|reel|reels|tv)\//i.test(url);
-}
+function isYouTube(url: string): boolean { return /(?:youtube\.com|youtu\.be|youtube-nocookie\.com)/i.test(url); }
+function isTikTok(url: string): boolean { return /(?:tiktok\.com|vm\.tiktok\.com)/i.test(url); }
+function isTwitter(url: string): boolean { return /(?:twitter\.com|x\.com)\/\w+\/status/i.test(url); }
+function isInstagram(url: string): boolean { return /(?:instagram\.com|instagr\.am)\/(?:p|reel|reels|tv)\//i.test(url); }
+function isDailymotion(url: string): boolean { return /(?:dailymotion\.com|dai\.ly)/i.test(url); }
+function isVimeo(url: string): boolean { return /vimeo\.com\/\d+/i.test(url); }
+function isRumble(url: string): boolean { return /rumble\.com/i.test(url); }
+function isStreamable(url: string): boolean { return /streamable\.com\//i.test(url); }
+function isRedditVideo(url: string): boolean { return /(?:reddit\.com|redd\.it)/i.test(url); }
 
 function generateFilename(title: string, source: VideoSource): string {
   const safeName = (title || 'video').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().replace(/\s+/g, '_').slice(0, 80);
@@ -135,6 +153,64 @@ interface VideoSource {
   format?: string;
   size?: string;
   type?: string;
+}
+
+// ── Ad / tracking URL filter ──
+
+const AD_DOMAINS = [
+  'doubleclick.net', 'googlesyndication.com', 'googleadservices.com', 'google-analytics.com',
+  'googletagmanager.com', 'facebook.net', 'fbcdn.net/ads', 'adsserver.', 'adservice.',
+  'ads.', 'ad.', 'adtech.', 'adnxs.com', 'adsrvr.org', 'amazon-adsystem.com',
+  'moatads.com', 'serving-sys.com', 'rubiconproject.com', 'pubmatic.com',
+  'openx.net', 'casalemedia.com', 'criteo.com', 'taboola.com', 'outbrain.com',
+  'bidswitch.net', 'smartadserver.com', 'indexexchange.com', 'sharethrough.com',
+  'spotxchange.com', 'springserve.com', 'yieldmo.com', 'undertone.com',
+  'teads.tv', 'tremorhub.com', 'unrulymedia.com', 'videologygroup.com',
+  'chartbeat.com', 'hotjar.com', 'mixpanel.com', 'segment.com', 'amplitude.com',
+  'newrelic.com', 'pingdom.com', 'sentry.io', 'bugsnag.com',
+  'pixel.', 'track.', 'tracking.', 'beacon.', 'analytics.',
+  'imasdk.googleapis.com', 'securepubads.g.doubleclick.net',
+  'pagead2.googlesyndication.com', 'tpc.googlesyndication.com',
+  'static.ads-twitter.com', 'syndication.twitter.com',
+  'connect.facebook.net', 'an.facebook.com',
+  'ads-api.twitter.com', 'analytics.twitter.com',
+  'tealiumiq.com', 'cdn.taboola.com', 'cdn.outbrain.com',
+  'connatix.com', 'jwpltx.com', 'aniview.com', 'innovid.com',
+  'freewheel.tv', 'adaptv.advertising.com', 'adcolony.com',
+  'mopub.com', 'inmobi.com', 'vungle.com', 'applovin.com',
+  'smaato.net', 'startapp.com', 'fyber.com', 'ironsource.com',
+  'chartboost.com', 'tapjoy.com', 'unity3d.com/ads',
+  'prebid.org', 'sovrn.com', 'gumgum.com', 'triplelift.com',
+  'nativo.com', 'stackadapt.com', 'mediamath.com',
+  'thetradedesk.com', 'liveramp.com', 'lotame.com',
+  'bluekai.com', 'eyeota.com', 'oracle.com/cx/advertising',
+];
+
+const AD_PATH_PATTERNS = [
+  /\/ads?\//i, /\/preroll/i, /\/midroll/i, /\/postroll/i,
+  /\/vast\//i, /\/vpaid\//i, /\/ima\//i, /\/adserver/i,
+  /\/pixel\//i, /\/track(?:ing)?\//i, /\/beacon\//i,
+  /\/sponsor/i, /\/promo(?:tion)?\//i, /commercial/i,
+  /interstitial/i, /overlay_ad/i, /bumper_ad/i,
+];
+
+function isAdUrl(url: string): boolean {
+  const lower = url.toLowerCase();
+  for (const domain of AD_DOMAINS) {
+    if (lower.includes(domain)) return true;
+  }
+  for (const pattern of AD_PATH_PATTERNS) {
+    if (pattern.test(lower)) return true;
+  }
+  // Very short video files are usually tracking pixels
+  if (/\.(?:gif|png|jpg|jpeg|svg|ico)(?:\?|$)/i.test(lower)) return true;
+  // 1x1 pixel trackers
+  if (/width=["']?1["']?\s+height=["']?1["']?/i.test(lower)) return true;
+  return false;
+}
+
+function filterAdSources(sources: VideoSource[]): VideoSource[] {
+  return sources.filter(s => !isAdUrl(s.url));
 }
 
 function mergeUniqueSources(...groups: VideoSource[][]): VideoSource[] {
@@ -154,27 +230,36 @@ function mergeUniqueSources(...groups: VideoSource[][]): VideoSource[] {
   return merged;
 }
 
-// ── Cobalt ──
+// ── Cobalt (multiple instances) ──
 
-async function tryCobalt(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
-  try {
-    const res = await fetch('https://api.cobalt.tools/', {
-      method: 'POST',
-      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, downloadMode: 'auto', filenameStyle: 'pretty' }),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    console.log('Cobalt status:', data.status);
+const COBALT_INSTANCES = [
+  'https://api.cobalt.tools/',
+  'https://cobalt-api.kwiatekmiki.com/',
+  'https://cobalt.canine.tools/',
+];
 
-    if (data.status === 'picker') {
-      return { success: true, type: 'picker', audio: data.audio, picker: data.picker, metadata: pageData.metadata, videoSources: pageData.videoSources };
+async function tryCobaltMulti(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  for (const instance of COBALT_INSTANCES) {
+    try {
+      const res = await fetch(instance, {
+        method: 'POST',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, downloadMode: 'auto', filenameStyle: 'pretty' }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      console.log('Cobalt status from', instance, ':', data.status);
+
+      if (data.status === 'picker') {
+        return { success: true, type: 'picker', audio: data.audio, picker: data.picker, metadata: pageData.metadata, videoSources: pageData.videoSources };
+      }
+      if (data.status === 'redirect' || data.status === 'tunnel') {
+        return { success: true, type: 'direct', url: data.url, filename: data.filename, metadata: pageData.metadata, videoSources: pageData.videoSources };
+      }
+    } catch (e) {
+      console.log('Cobalt instance', instance, 'failed:', e);
     }
-    if (data.status === 'redirect' || data.status === 'tunnel') {
-      return { success: true, type: 'direct', url: data.url, filename: data.filename, metadata: pageData.metadata, videoSources: pageData.videoSources };
-    }
-  } catch (e) {
-    console.log('Cobalt unavailable:', e);
   }
   return null;
 }
@@ -186,6 +271,8 @@ const INVIDIOUS_INSTANCES = [
   'https://invidious.fdn.fr',
   'https://vid.puffyan.us',
   'https://invidious.nerdvpn.de',
+  'https://invidious.privacyredirect.com',
+  'https://invidious.protokolla.fi',
 ];
 
 async function tryInvidious(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
@@ -202,13 +289,9 @@ async function tryInvidious(url: string, pageData: PageData): Promise<Record<str
       const data = await res.json();
 
       const sources: VideoSource[] = [];
-      // Format streams (combined audio+video)
       for (const f of data.formatStreams || []) {
-        if (f.url) {
-          sources.push({ url: f.url, quality: f.qualityLabel || f.quality, format: f.container || 'mp4', type: 'combined' });
-        }
+        if (f.url) sources.push({ url: f.url, quality: f.qualityLabel || f.quality, format: f.container || 'mp4', type: 'combined' });
       }
-      // Adaptive formats (video only, usually higher quality)
       for (const f of data.adaptiveFormats || []) {
         if (f.url && f.type?.startsWith('video/')) {
           sources.push({ url: f.url, quality: f.qualityLabel || f.quality, format: f.container || 'mp4', type: 'video' });
@@ -218,20 +301,9 @@ async function tryInvidious(url: string, pageData: PageData): Promise<Record<str
       if (sources.length > 0) {
         const thumb = data.videoThumbnails?.find((t: any) => t.quality === 'maxresdefault')?.url || data.videoThumbnails?.[0]?.url || pageData.metadata.thumbnail;
         const meta = { ...pageData.metadata, title: data.title || pageData.metadata.title, thumbnail: thumb, author: data.author || pageData.metadata.author, duration: data.lengthSeconds?.toString() || pageData.metadata.duration };
-
-        return {
-          success: true,
-          type: sources.length === 1 ? 'direct' : 'picker',
-          url: sources.length === 1 ? sources[0].url : undefined,
-          filename: sources.length === 1 ? generateFilename(meta.title, sources[0]) : undefined,
-          picker: sources.length > 1 ? sources.map(s => ({ type: 'video', url: s.url, thumb, quality: s.quality, format: s.format, size: s.size })) : undefined,
-          metadata: meta,
-          videoSources: sources,
-        };
+        return buildPickerResult(sources, meta);
       }
-    } catch {
-      continue;
-    }
+    } catch { continue; }
   }
   return null;
 }
@@ -247,6 +319,7 @@ const PIPED_INSTANCES = [
   'https://pipedapi.kavin.rocks',
   'https://pipedapi.adminforge.de',
   'https://api.piped.projectsegfau.lt',
+  'https://pipedapi.in.projectsegfau.lt',
 ];
 
 async function tryPiped(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
@@ -268,7 +341,6 @@ async function tryPiped(url: string, pageData: PageData): Promise<Record<string,
           sources.push({ url: s.url, quality: s.quality, format: s.format?.split('/')[1] || 'mp4', type: 'combined' });
         }
       }
-      // Also add video-only streams with higher quality
       for (const s of data.videoStreams || []) {
         if (s.url && s.videoOnly === true) {
           sources.push({ url: s.url, quality: s.quality, format: s.format?.split('/')[1] || 'webm', type: 'video' });
@@ -283,19 +355,9 @@ async function tryPiped(url: string, pageData: PageData): Promise<Record<string,
           author: data.uploader || pageData.metadata.author,
           duration: data.duration?.toString() || pageData.metadata.duration,
         };
-        return {
-          success: true,
-          type: sources.length === 1 ? 'direct' : 'picker',
-          url: sources.length === 1 ? sources[0].url : undefined,
-          filename: sources.length === 1 ? generateFilename(meta.title, sources[0]) : undefined,
-          picker: sources.length > 1 ? sources.map(s => ({ type: 'video', url: s.url, thumb: meta.thumbnail, quality: s.quality, format: s.format, size: s.size })) : undefined,
-          metadata: meta,
-          videoSources: sources,
-        };
+        return buildPickerResult(sources, meta);
       }
-    } catch {
-      continue;
-    }
+    } catch { continue; }
   }
   return null;
 }
@@ -303,7 +365,7 @@ async function tryPiped(url: string, pageData: PageData): Promise<Record<string,
 // ── TikTok extraction ──
 
 async function tryTikTok(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
-  // Strategy 1: Use tikwm.com open API
+  // Strategy 1: tikwm.com
   try {
     const res = await fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`, {
       headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
@@ -314,13 +376,9 @@ async function tryTikTok(url: string, pageData: PageData): Promise<Record<string
       if (json.data) {
         const d = json.data;
         const sources: VideoSource[] = [];
-        // No-watermark URL
         if (d.play) sources.push({ url: d.play, quality: 'HD (no watermark)', format: 'mp4', type: 'combined' });
-        // HD play
         if (d.hdplay) sources.push({ url: d.hdplay, quality: 'HD+', format: 'mp4', type: 'combined' });
-        // Watermarked version
         if (d.wmplay) sources.push({ url: d.wmplay, quality: 'Watermarked', format: 'mp4', type: 'combined' });
-        // Audio
         if (d.music) sources.push({ url: d.music, quality: 'Audio', format: 'mp3', type: 'audio' });
 
         if (sources.length > 0) {
@@ -331,23 +389,13 @@ async function tryTikTok(url: string, pageData: PageData): Promise<Record<string
             author: d.author?.nickname || d.author?.unique_id || pageData.metadata.author,
             duration: d.duration?.toString() || pageData.metadata.duration,
           };
-          return {
-            success: true,
-            type: sources.length === 1 ? 'direct' : 'picker',
-            url: sources.length === 1 ? sources[0].url : undefined,
-            filename: sources.length === 1 ? generateFilename(meta.title, sources[0]) : undefined,
-            picker: sources.length > 1 ? sources.map(s => ({ type: s.type === 'audio' ? 'audio' : 'video', url: s.url, thumb: meta.thumbnail, quality: s.quality, format: s.format })) : undefined,
-            metadata: meta,
-            videoSources: sources,
-          };
+          return buildPickerResult(sources, meta);
         }
       }
     }
-  } catch (e) {
-    console.log('tikwm fallback failed:', e);
-  }
+  } catch (e) { console.log('tikwm failed:', e); }
 
-  // Strategy 2: Try tikcdn.io
+  // Strategy 2: tikcdn.io
   try {
     const res = await fetch('https://tikcdn.io/ssstik/' + encodeURIComponent(url), {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
@@ -357,32 +405,24 @@ async function tryTikTok(url: string, pageData: PageData): Promise<Record<string
     const ct = res.headers.get('content-type') || '';
     if (res.ok && ct.includes('video')) {
       return {
-        success: true,
-        type: 'direct',
-        url: res.url,
+        success: true, type: 'direct', url: res.url,
         filename: generateFilename(pageData.metadata.title, { url: res.url, format: 'mp4' }),
         metadata: pageData.metadata,
         videoSources: [{ url: res.url, quality: 'SD', format: 'mp4', type: 'combined' }],
       };
     }
-  } catch (e) {
-    console.log('tikcdn fallback failed:', e);
-  }
+  } catch (e) { console.log('tikcdn failed:', e); }
 
-  // Strategy 3: Scrape mobile TikTok page for __UNIVERSAL_DATA_FOR_REHYDRATION__
+  // Strategy 3: Mobile TikTok scrape
   try {
     const mobileUrl = url.replace('www.tiktok.com', 'm.tiktok.com');
     const res = await fetch(mobileUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
-        'Accept': 'text/html',
-      },
+      headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15', 'Accept': 'text/html' },
       redirect: 'follow',
       signal: AbortSignal.timeout(10000),
     });
     const html = await res.text();
 
-    // Extract from __UNIVERSAL_DATA_FOR_REHYDRATION__
     const ssrMatch = html.match(/window\['SIGI_STATE'\]\s*=\s*(\{[\s\S]*?\});/);
     const rehydrateMatch = html.match(/<script[^>]*id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
     const blob = ssrMatch?.[1] || rehydrateMatch?.[1] || '';
@@ -391,33 +431,18 @@ async function tryTikTok(url: string, pageData: PageData): Promise<Record<string
       const videoUrls: string[] = [];
       const urlPattern = /https?:\/\/[^"'\s\\]+\.(?:mp4|webm)(?:\?[^"'\s\\]*)?/g;
       let match;
-      while ((match = urlPattern.exec(blob)) !== null) {
-        videoUrls.push(normalizeExtractedUrl(match[0]));
-      }
+      while ((match = urlPattern.exec(blob)) !== null) videoUrls.push(normalizeExtractedUrl(match[0]));
 
-      // Also look for playAddr / downloadAddr keys
       const addrPattern = /["'](?:playAddr|downloadAddr|play_addr(?:_lowbr)?|download_addr)["']\s*:\s*["'](https?:\/\/[^"']+)["']/gi;
-      while ((match = addrPattern.exec(blob)) !== null) {
-        videoUrls.push(normalizeExtractedUrl(match[1]));
-      }
+      while ((match = addrPattern.exec(blob)) !== null) videoUrls.push(normalizeExtractedUrl(match[1]));
 
-      const unique = [...new Set(videoUrls)].filter(u => u.startsWith('http'));
+      const unique = [...new Set(videoUrls)].filter(u => u.startsWith('http') && !isAdUrl(u));
       if (unique.length > 0) {
         const sources = unique.map(u => ({ url: u, quality: 'Direct', format: 'mp4', type: 'combined' as const }));
-        return {
-          success: true,
-          type: sources.length === 1 ? 'direct' : 'picker',
-          url: sources.length === 1 ? sources[0].url : undefined,
-          filename: sources.length === 1 ? generateFilename(pageData.metadata.title, sources[0]) : undefined,
-          picker: sources.length > 1 ? sources.map(s => ({ type: 'video', url: s.url, thumb: pageData.metadata.thumbnail, quality: s.quality, format: s.format })) : undefined,
-          metadata: pageData.metadata,
-          videoSources: sources,
-        };
+        return buildPickerResult(sources, pageData.metadata);
       }
     }
-  } catch (e) {
-    console.log('TikTok mobile scrape failed:', e);
-  }
+  } catch (e) { console.log('TikTok mobile scrape failed:', e); }
 
   return null;
 }
@@ -425,73 +450,11 @@ async function tryTikTok(url: string, pageData: PageData): Promise<Record<string
 // ── Twitter/X extraction ──
 
 async function tryTwitter(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
-  // Strategy 1: Use nitter instances to get direct video URLs
-  const nitterInstances = [
-    'https://nitter.privacydev.net',
-    'https://nitter.poast.org',
-    'https://nitter.cz',
-  ];
-
   const tweetMatch = url.match(/(?:twitter\.com|x\.com)\/(\w+)\/status\/(\d+)/i);
   if (!tweetMatch) return null;
   const [, user, tweetId] = tweetMatch;
 
-  for (const instance of nitterInstances) {
-    try {
-      const nitterUrl = `${instance}/${user}/status/${tweetId}`;
-      const res = await fetch(nitterUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'text/html',
-        },
-        redirect: 'follow',
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!res.ok) continue;
-      const html = await res.text();
-
-      const sources: VideoSource[] = [];
-      // Nitter embeds video as <source> or <video> tags
-      const srcRegex = /<source[^>]*src=["']([^"']+)["'][^>]*type=["']video\/([^"']+)["']/gi;
-      let m;
-      while ((m = srcRegex.exec(html)) !== null) {
-        let videoUrl = m[1];
-        if (videoUrl.startsWith('/')) videoUrl = `${instance}${videoUrl}`;
-        sources.push({ url: videoUrl, quality: 'Direct', format: m[2] || 'mp4', type: 'combined' });
-      }
-
-      // Also try direct video tag src
-      const videoSrc = html.match(/<video[^>]*src=["']([^"']+)["']/i);
-      if (videoSrc) {
-        let vUrl = videoSrc[1];
-        if (vUrl.startsWith('/')) vUrl = `${instance}${vUrl}`;
-        sources.push({ url: vUrl, quality: 'Direct', format: 'mp4', type: 'combined' });
-      }
-
-      if (sources.length > 0) {
-        const titleMatch = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']*)["']/i);
-        const meta = {
-          ...pageData.metadata,
-          title: titleMatch?.[1]?.slice(0, 100) || pageData.metadata.title,
-          author: user,
-          siteName: 'Twitter / X',
-        };
-        return {
-          success: true,
-          type: sources.length === 1 ? 'direct' : 'picker',
-          url: sources.length === 1 ? sources[0].url : undefined,
-          filename: sources.length === 1 ? generateFilename(meta.title, sources[0]) : undefined,
-          picker: sources.length > 1 ? sources.map(s => ({ type: 'video', url: s.url, thumb: meta.thumbnail, quality: s.quality, format: s.format })) : undefined,
-          metadata: meta,
-          videoSources: sources,
-        };
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  // Strategy 2: Use fxtwitter.com API (returns JSON with video info)
+  // Strategy 1: fxtwitter API
   try {
     const fxRes = await fetch(`https://api.fxtwitter.com/${user}/status/${tweetId}`, {
       headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
@@ -503,12 +466,7 @@ async function tryTwitter(url: string, pageData: PageData): Promise<Record<strin
       if (tweet?.media?.videos?.length > 0) {
         const sources: VideoSource[] = [];
         for (const vid of tweet.media.videos) {
-          if (vid.url) {
-            sources.push({ url: vid.url, quality: vid.height ? `${vid.height}p` : 'HD', format: 'mp4', type: 'combined' });
-          }
-        }
-        // Also check for all variants
-        for (const vid of tweet.media.videos) {
+          if (vid.url) sources.push({ url: vid.url, quality: vid.height ? `${vid.height}p` : 'HD', format: 'mp4', type: 'combined' });
           if (vid.variants) {
             for (const v of vid.variants) {
               if (v.url && v.content_type?.includes('video')) {
@@ -525,23 +483,13 @@ async function tryTwitter(url: string, pageData: PageData): Promise<Record<strin
             thumbnail: tweet.media?.photos?.[0]?.url || tweet.media?.videos?.[0]?.thumbnail_url || pageData.metadata.thumbnail,
             siteName: 'Twitter / X',
           };
-          return {
-            success: true,
-            type: sources.length === 1 ? 'direct' : 'picker',
-            url: sources.length === 1 ? sources[0].url : undefined,
-            filename: sources.length === 1 ? generateFilename(meta.title, sources[0]) : undefined,
-            picker: sources.length > 1 ? sources.map(s => ({ type: 'video', url: s.url, thumb: meta.thumbnail, quality: s.quality, format: s.format })) : undefined,
-            metadata: meta,
-            videoSources: sources,
-          };
+          return buildPickerResult(sources, meta);
         }
       }
     }
-  } catch (e) {
-    console.log('fxtwitter fallback failed:', e);
-  }
+  } catch (e) { console.log('fxtwitter failed:', e); }
 
-  // Strategy 3: Use vxtwitter/fixupx embed page scraping
+  // Strategy 2: vxtwitter API
   try {
     const vxUrl = `https://api.vxtwitter.com/${user}/status/${tweetId}`;
     const res = await fetch(vxUrl, {
@@ -565,20 +513,46 @@ async function tryTwitter(url: string, pageData: PageData): Promise<Record<strin
             thumbnail: data.media_extended?.[0]?.thumbnail_url || pageData.metadata.thumbnail,
             siteName: 'Twitter / X',
           };
-          return {
-            success: true,
-            type: sources.length === 1 ? 'direct' : 'picker',
-            url: sources.length === 1 ? sources[0].url : undefined,
-            filename: sources.length === 1 ? generateFilename(meta.title, sources[0]) : undefined,
-            picker: sources.length > 1 ? sources.map(s => ({ type: 'video', url: s.url, thumb: meta.thumbnail, quality: s.quality, format: s.format })) : undefined,
-            metadata: meta,
-            videoSources: sources,
-          };
+          return buildPickerResult(sources, meta);
         }
       }
     }
-  } catch (e) {
-    console.log('vxtwitter fallback failed:', e);
+  } catch (e) { console.log('vxtwitter failed:', e); }
+
+  // Strategy 3: Nitter instances
+  const nitterInstances = ['https://nitter.privacydev.net', 'https://nitter.poast.org', 'https://nitter.cz'];
+  for (const instance of nitterInstances) {
+    try {
+      const nitterUrl = `${instance}/${user}/status/${tweetId}`;
+      const res = await fetch(nitterUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'text/html' },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) continue;
+      const html = await res.text();
+      const sources: VideoSource[] = [];
+
+      const srcRegex = /<source[^>]*src=["']([^"']+)["'][^>]*type=["']video\/([^"']+)["']/gi;
+      let m;
+      while ((m = srcRegex.exec(html)) !== null) {
+        let videoUrl = m[1];
+        if (videoUrl.startsWith('/')) videoUrl = `${instance}${videoUrl}`;
+        sources.push({ url: videoUrl, quality: 'Direct', format: m[2] || 'mp4', type: 'combined' });
+      }
+
+      const videoSrc = html.match(/<video[^>]*src=["']([^"']+)["']/i);
+      if (videoSrc) {
+        let vUrl = videoSrc[1];
+        if (vUrl.startsWith('/')) vUrl = `${instance}${vUrl}`;
+        sources.push({ url: vUrl, quality: 'Direct', format: 'mp4', type: 'combined' });
+      }
+
+      if (sources.length > 0) {
+        const meta = { ...pageData.metadata, author: user, siteName: 'Twitter / X' };
+        return buildPickerResult(sources, meta);
+      }
+    } catch { continue; }
   }
 
   return null;
@@ -587,156 +561,414 @@ async function tryTwitter(url: string, pageData: PageData): Promise<Record<strin
 // ── Instagram extraction ──
 
 async function tryInstagram(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
-  // Strategy 1: Use ddinstagram (embed proxy)
+  // Strategy 1: ddinstagram
   try {
     const igUrl = url.replace(/(?:www\.)?instagram\.com/, 'ddinstagram.com');
     const res = await fetch(igUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-        'Accept': 'text/html',
-      },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', 'Accept': 'text/html' },
       redirect: 'follow',
       signal: AbortSignal.timeout(12000),
     });
     if (res.ok) {
       const html = await res.text();
       const sources: VideoSource[] = [];
-
-      // Look for og:video
       const ogVideo = html.match(/<meta[^>]*property=["']og:video(?::secure_url)?["'][^>]*content=["']([^"']+)["']/i);
       if (ogVideo) sources.push({ url: normalizeExtractedUrl(ogVideo[1]), quality: 'HD', format: 'mp4', type: 'combined' });
-
-      // Look for direct video links
       const videoRegex = /["'](https?:\/\/[^"'\s]+(?:cdninstagram\.com|fbcdn\.net)[^"'\s]*\.mp4[^"'\s]*)["']/gi;
       let m;
-      while ((m = videoRegex.exec(html)) !== null) {
-        sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: 'mp4', type: 'combined' });
-      }
-
+      while ((m = videoRegex.exec(html)) !== null) sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: 'mp4', type: 'combined' });
       if (sources.length > 0) {
         const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']*)["']/i);
         const ogThumb = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']*)["']/i);
-        const meta = {
-          ...pageData.metadata,
-          title: ogTitle?.[1] || pageData.metadata.title,
-          thumbnail: ogThumb?.[1] || pageData.metadata.thumbnail,
-          siteName: 'Instagram',
-        };
-        const unique = mergeUniqueSources(sources);
-        return {
-          success: true,
-          type: unique.length === 1 ? 'direct' : 'picker',
-          url: unique.length === 1 ? unique[0].url : undefined,
-          filename: unique.length === 1 ? generateFilename(meta.title, unique[0]) : undefined,
-          picker: unique.length > 1 ? unique.map((s, i) => ({ type: 'video', url: s.url, thumb: meta.thumbnail, quality: s.quality || `Option ${i + 1}`, format: s.format })) : undefined,
-          metadata: meta,
-          videoSources: unique,
-        };
+        const meta = { ...pageData.metadata, title: ogTitle?.[1] || pageData.metadata.title, thumbnail: ogThumb?.[1] || pageData.metadata.thumbnail, siteName: 'Instagram' };
+        return buildPickerResult(mergeUniqueSources(sources), meta);
       }
     }
-  } catch (e) {
-    console.log('ddinstagram failed:', e);
-  }
+  } catch (e) { console.log('ddinstagram failed:', e); }
 
-  // Strategy 2: Use imginn.com as proxy
+  // Strategy 2: imginn
   try {
     const shortcode = url.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/)?.[1];
     if (shortcode) {
-      const imginnUrl = `https://imginn.com/p/${shortcode}/`;
-      const res = await fetch(imginnUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'text/html',
-        },
+      const res = await fetch(`https://imginn.com/p/${shortcode}/`, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'text/html' },
         redirect: 'follow',
         signal: AbortSignal.timeout(10000),
       });
       if (res.ok) {
         const html = await res.text();
         const sources: VideoSource[] = [];
-
         const videoSrcRegex = /["'](https?:\/\/[^"'\s]+\.mp4[^"'\s]*)["']/gi;
         let m;
-        while ((m = videoSrcRegex.exec(html)) !== null) {
-          sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: 'mp4', type: 'combined' });
-        }
-
-        // data-video attributes
+        while ((m = videoSrcRegex.exec(html)) !== null) sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: 'mp4', type: 'combined' });
         const dataVideoRegex = /data-video=["'](https?:\/\/[^"']+)["']/gi;
-        while ((m = dataVideoRegex.exec(html)) !== null) {
-          sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: 'mp4', type: 'combined' });
-        }
-
-        if (sources.length > 0) {
-          const unique = mergeUniqueSources(sources);
-          return {
-            success: true,
-            type: unique.length === 1 ? 'direct' : 'picker',
-            url: unique.length === 1 ? unique[0].url : undefined,
-            filename: unique.length === 1 ? generateFilename(pageData.metadata.title, unique[0]) : undefined,
-            picker: unique.length > 1 ? unique.map((s, i) => ({ type: 'video', url: s.url, thumb: pageData.metadata.thumbnail, quality: s.quality || `Option ${i + 1}`, format: s.format })) : undefined,
-            metadata: { ...pageData.metadata, siteName: 'Instagram' },
-            videoSources: unique,
-          };
-        }
+        while ((m = dataVideoRegex.exec(html)) !== null) sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: 'mp4', type: 'combined' });
+        if (sources.length > 0) return buildPickerResult(mergeUniqueSources(sources), { ...pageData.metadata, siteName: 'Instagram' });
       }
     }
-  } catch (e) {
-    console.log('imginn failed:', e);
-  }
+  } catch (e) { console.log('imginn failed:', e); }
 
-  // Strategy 3: Embed page scraping via Instagram's embed endpoint
+  // Strategy 3: Instagram embed
   try {
     const shortcode = url.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/)?.[1];
     if (shortcode) {
-      const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/`;
-      const res = await fetch(embedUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'text/html',
-        },
+      const res = await fetch(`https://www.instagram.com/p/${shortcode}/embed/`, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'text/html' },
         redirect: 'follow',
         signal: AbortSignal.timeout(10000),
       });
       if (res.ok) {
         const html = await res.text();
         const sources: VideoSource[] = [];
-
-        // Video URL in embed JSON
         const videoUrlMatch = html.match(/["']video_url["']\s*:\s*["']([^"']+)["']/i);
-        if (videoUrlMatch) {
-          sources.push({ url: normalizeExtractedUrl(videoUrlMatch[1]), quality: 'HD', format: 'mp4', type: 'combined' });
-        }
-
-        // Direct CDN links
+        if (videoUrlMatch) sources.push({ url: normalizeExtractedUrl(videoUrlMatch[1]), quality: 'HD', format: 'mp4', type: 'combined' });
         const cdnRegex = /(https?:\/\/[^"'\s\\]+(?:cdninstagram\.com|fbcdn\.net)[^"'\s\\]*)/gi;
         let m;
         while ((m = cdnRegex.exec(html)) !== null) {
           const candidate = normalizeExtractedUrl(m[1]);
-          if (/\.mp4|video/i.test(candidate)) {
-            sources.push({ url: candidate, quality: 'Direct', format: 'mp4', type: 'combined' });
-          }
+          if (/\.mp4|video/i.test(candidate)) sources.push({ url: candidate, quality: 'Direct', format: 'mp4', type: 'combined' });
         }
-
-        if (sources.length > 0) {
-          const unique = mergeUniqueSources(sources);
-          return {
-            success: true,
-            type: unique.length === 1 ? 'direct' : 'picker',
-            url: unique.length === 1 ? unique[0].url : undefined,
-            filename: unique.length === 1 ? generateFilename(pageData.metadata.title, unique[0]) : undefined,
-            picker: unique.length > 1 ? unique.map((s, i) => ({ type: 'video', url: s.url, thumb: pageData.metadata.thumbnail, quality: s.quality || `Option ${i + 1}`, format: s.format })) : undefined,
-            metadata: { ...pageData.metadata, siteName: 'Instagram' },
-            videoSources: unique,
-          };
-        }
+        if (sources.length > 0) return buildPickerResult(mergeUniqueSources(sources), { ...pageData.metadata, siteName: 'Instagram' });
       }
     }
-  } catch (e) {
-    console.log('Instagram embed scrape failed:', e);
+  } catch (e) { console.log('Instagram embed failed:', e); }
+
+  return null;
+}
+
+// ── Dailymotion extraction ──
+
+async function tryDailymotion(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  const videoId = url.match(/dailymotion\.com\/video\/([a-zA-Z0-9]+)/i)?.[1] || url.match(/dai\.ly\/([a-zA-Z0-9]+)/i)?.[1];
+  if (!videoId) return null;
+
+  try {
+    // Use Dailymotion's oEmbed + player API
+    const oembedRes = await fetch(`https://www.dailymotion.com/services/oembed?url=https://www.dailymotion.com/video/${videoId}&format=json`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    
+    // Also fetch the player page to extract streams
+    const playerRes = await fetch(`https://www.dailymotion.com/player/metadata/video/${videoId}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    const sources: VideoSource[] = [];
+    let meta = { ...pageData.metadata, siteName: 'Dailymotion' };
+
+    if (oembedRes.ok) {
+      const oembed = await oembedRes.json();
+      meta.title = oembed.title || meta.title;
+      meta.author = oembed.author_name || meta.author;
+      meta.thumbnail = oembed.thumbnail_url || meta.thumbnail;
+    }
+
+    if (playerRes.ok) {
+      const playerData = await playerRes.json();
+      const qualities = playerData.qualities;
+      if (qualities) {
+        for (const [quality, streams] of Object.entries(qualities)) {
+          if (Array.isArray(streams)) {
+            for (const stream of streams as any[]) {
+              if (stream.url && stream.type?.includes('video')) {
+                sources.push({ url: stream.url, quality: quality, format: stream.type?.includes('mp4') ? 'mp4' : 'hls', type: 'combined' });
+              }
+            }
+          }
+        }
+      }
+      // HLS manifest
+      if (playerData.qualities?.auto?.[0]?.url) {
+        sources.push({ url: playerData.qualities.auto[0].url, quality: 'Auto (HLS)', format: 'hls', type: 'combined' });
+      }
+      meta.title = playerData.title || meta.title;
+      meta.thumbnail = playerData.poster_url || meta.thumbnail;
+      meta.duration = playerData.duration?.toString() || meta.duration;
+    }
+
+    if (sources.length > 0) return buildPickerResult(filterAdSources(sources), meta);
+  } catch (e) { console.log('Dailymotion extraction failed:', e); }
+
+  return null;
+}
+
+// ── Vimeo extraction ──
+
+async function tryVimeo(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  const videoId = url.match(/vimeo\.com\/(\d+)/)?.[1];
+  if (!videoId) return null;
+
+  try {
+    // Vimeo oEmbed
+    const oembedRes = await fetch(`https://vimeo.com/api/oembed.json?url=https://vimeo.com/${videoId}`, {
+      signal: AbortSignal.timeout(8000),
+    });
+
+    let meta = { ...pageData.metadata, siteName: 'Vimeo' };
+    if (oembedRes.ok) {
+      const oembed = await oembedRes.json();
+      meta.title = oembed.title || meta.title;
+      meta.author = oembed.author_name || meta.author;
+      meta.thumbnail = oembed.thumbnail_url || meta.thumbnail;
+      meta.duration = oembed.duration?.toString() || meta.duration;
+    }
+
+    // Try config endpoint for streams
+    const configRes = await fetch(`https://player.vimeo.com/video/${videoId}/config`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Referer': 'https://vimeo.com/' },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (configRes.ok) {
+      const config = await configRes.json();
+      const sources: VideoSource[] = [];
+
+      // Progressive downloads
+      const progressive = config.request?.files?.progressive;
+      if (Array.isArray(progressive)) {
+        for (const p of progressive) {
+          if (p.url) sources.push({ url: p.url, quality: p.quality || `${p.height}p`, format: 'mp4', type: 'combined', size: p.size ? formatBytes(p.size) : undefined });
+        }
+      }
+
+      // HLS
+      const hls = config.request?.files?.hls?.cdns;
+      if (hls) {
+        for (const [, cdn] of Object.entries(hls) as any) {
+          if (cdn.url) sources.push({ url: cdn.url, quality: 'Auto (HLS)', format: 'hls', type: 'combined' });
+        }
+      }
+
+      // DASH
+      const dash = config.request?.files?.dash?.cdns;
+      if (dash) {
+        for (const [, cdn] of Object.entries(dash) as any) {
+          if (cdn.url) sources.push({ url: cdn.url, quality: 'Auto (DASH)', format: 'dash', type: 'combined' });
+        }
+      }
+
+      meta.thumbnail = config.video?.thumbs?.base || meta.thumbnail;
+      meta.title = config.video?.title || meta.title;
+
+      if (sources.length > 0) return buildPickerResult(sources, meta);
+    }
+  } catch (e) { console.log('Vimeo extraction failed:', e); }
+
+  return null;
+}
+
+// ── Rumble extraction ──
+
+async function tryRumble(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'text/html' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+
+    const sources: VideoSource[] = [];
+
+    // Rumble embeds video URLs in JSON within script tags
+    const embedPattern = /(?:embedUrl|videoUrl|mp4Url|hlsUrl)["']\s*:\s*["'](https?:\/\/[^"']+)["']/gi;
+    let m;
+    while ((m = embedPattern.exec(html)) !== null) {
+      sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: guessFormat('', m[1]), type: 'combined' });
+    }
+
+    // Look in JSON-LD
+    const jsonLdRegex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+    while ((m = jsonLdRegex.exec(html)) !== null) {
+      try {
+        const obj = JSON.parse(m[1]);
+        if (obj.contentUrl) sources.push({ url: obj.contentUrl, quality: 'HD', format: 'mp4', type: 'combined' });
+        if (obj.embedUrl) sources.push({ url: obj.embedUrl, quality: 'Embed', format: 'mp4', type: 'combined' });
+      } catch {}
+    }
+
+    // Direct mp4 links
+    const directRegex = /["'](https?:\/\/[^"'\s]+rumble\.com[^"'\s]*\.mp4[^"'\s]*)["']/gi;
+    while ((m = directRegex.exec(html)) !== null) {
+      sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: 'mp4', type: 'combined' });
+    }
+
+    const meta = extractMetadata(html, url);
+    meta.siteName = 'Rumble';
+
+    if (sources.length > 0) return buildPickerResult(filterAdSources(mergeUniqueSources(sources)), meta);
+  } catch (e) { console.log('Rumble extraction failed:', e); }
+
+  return null;
+}
+
+// ── Streamable extraction ──
+
+async function tryStreamable(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  const videoId = url.match(/streamable\.com\/([a-zA-Z0-9]+)/)?.[1];
+  if (!videoId) return null;
+
+  try {
+    // Streamable has an open API
+    const res = await fetch(`https://api.streamable.com/videos/${videoId}`, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const sources: VideoSource[] = [];
+      const files = data.files;
+      if (files) {
+        for (const [quality, file] of Object.entries(files) as any) {
+          if (file?.url) {
+            const videoUrl = file.url.startsWith('//') ? `https:${file.url}` : file.url;
+            sources.push({ url: videoUrl, quality: quality, format: 'mp4', type: 'combined', size: file.size ? formatBytes(file.size) : undefined });
+          }
+        }
+      }
+      const meta = {
+        ...pageData.metadata,
+        title: data.title || pageData.metadata.title,
+        thumbnail: data.thumbnail_url ? (data.thumbnail_url.startsWith('//') ? `https:${data.thumbnail_url}` : data.thumbnail_url) : pageData.metadata.thumbnail,
+        siteName: 'Streamable',
+      };
+      if (sources.length > 0) return buildPickerResult(sources, meta);
+    }
+  } catch (e) { console.log('Streamable extraction failed:', e); }
+
+  return null;
+}
+
+// ── Reddit extraction ──
+
+async function tryReddit(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  try {
+    // Reddit JSON API
+    const jsonUrl = url.replace(/\/?$/, '.json');
+    const res = await fetch(jsonUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+
+    const post = data?.[0]?.data?.children?.[0]?.data;
+    if (!post) return null;
+
+    const sources: VideoSource[] = [];
+
+    // Direct reddit video
+    if (post.is_video && post.media?.reddit_video) {
+      const rv = post.media.reddit_video;
+      if (rv.fallback_url) sources.push({ url: rv.fallback_url, quality: `${rv.height || 720}p`, format: 'mp4', type: 'video' });
+      if (rv.hls_url) sources.push({ url: rv.hls_url, quality: 'Auto (HLS)', format: 'hls', type: 'combined' });
+      if (rv.dash_url) sources.push({ url: rv.dash_url, quality: 'Auto (DASH)', format: 'dash', type: 'combined' });
+    }
+
+    // Crossposted video
+    if (post.crosspost_parent_list?.length > 0) {
+      const cp = post.crosspost_parent_list[0];
+      if (cp.media?.reddit_video?.fallback_url) {
+        sources.push({ url: cp.media.reddit_video.fallback_url, quality: `${cp.media.reddit_video.height || 720}p`, format: 'mp4', type: 'video' });
+      }
+    }
+
+    const meta = {
+      ...pageData.metadata,
+      title: post.title || pageData.metadata.title,
+      thumbnail: post.thumbnail && post.thumbnail !== 'self' ? post.thumbnail : pageData.metadata.thumbnail,
+      author: post.author || pageData.metadata.author,
+      siteName: 'Reddit',
+    };
+
+    if (sources.length > 0) return buildPickerResult(sources, meta);
+  } catch (e) { console.log('Reddit extraction failed:', e); }
+
+  return null;
+}
+
+// ── Deep iframe scraping (for unknown sites) ──
+
+async function tryDeepIframeScrape(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  // Find iframes in the page and scrape them for video sources
+  const iframeSrcs: string[] = [];
+  const iframeRegex = /<iframe[^>]*\ssrc=["']([^"']+)["']/gi;
+  let m;
+
+  // We need the raw HTML - re-fetch if we don't have video sources yet
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENTS[0], 'Accept': 'text/html' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(10000),
+    });
+    const html = await res.text();
+
+    while ((m = iframeRegex.exec(html)) !== null) {
+      const src = m[1];
+      if (/embed|player|video/i.test(src) && !isAdUrl(src)) {
+        try {
+          const resolved = src.startsWith('http') ? src : new URL(src, url).href;
+          iframeSrcs.push(resolved);
+        } catch {}
+      }
+    }
+  } catch { return null; }
+
+  if (iframeSrcs.length === 0) return null;
+
+  // Scrape each iframe (max 3 to avoid timeout)
+  const allSources: VideoSource[] = [];
+  for (const iframeSrc of iframeSrcs.slice(0, 3)) {
+    try {
+      const res = await fetch(iframeSrc, {
+        headers: {
+          'User-Agent': USER_AGENTS[0],
+          'Accept': 'text/html',
+          'Referer': url,
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(8000),
+      });
+      const iframeHtml = await res.text();
+      const iframeSources = extractVideoSources(iframeHtml, iframeSrc);
+      allSources.push(...iframeSources);
+    } catch { continue; }
+  }
+
+  const filtered = filterAdSources(mergeUniqueSources(allSources));
+  if (filtered.length > 0) {
+    const verified = await verifyVideoSources(filtered, url);
+    if (verified.length > 0) {
+      return buildPickerResult(verified, pageData.metadata);
+    }
   }
 
   return null;
+}
+
+// ── Result builder ──
+
+function buildPickerResult(sources: VideoSource[], metadata: Record<string, string>): Record<string, unknown> {
+  const unique = mergeUniqueSources(sources);
+  const filtered = filterAdSources(unique);
+  if (filtered.length === 0) return { success: true, type: 'metadata_only', metadata, videoSources: [] };
+
+  return {
+    success: true,
+    type: filtered.length === 1 ? 'direct' : 'picker',
+    url: filtered.length === 1 ? filtered[0].url : undefined,
+    filename: filtered.length === 1 ? generateFilename(metadata.title, filtered[0]) : undefined,
+    picker: filtered.length > 1 ? filtered.map(s => ({
+      type: s.type === 'audio' ? 'audio' : 'video',
+      url: s.url, thumb: metadata.thumbnail,
+      quality: s.quality, format: s.format, size: s.size,
+    })) : undefined,
+    metadata,
+    videoSources: filtered,
+  };
 }
 
 // ── Page fetching with retry / multiple user agents ──
@@ -750,6 +982,7 @@ const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
   'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
   'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
 ];
 
 async function fetchPageDataWithRetry(url: string): Promise<PageData> {
@@ -777,14 +1010,12 @@ async function fetchPageDataWithRetry(url: string): Promise<PageData> {
         });
         const html = await response.text();
         const metadata = extractMetadata(html, candidateUrl);
-        const videoSources = extractVideoSources(html, candidateUrl);
+        const videoSources = filterAdSources(extractVideoSources(html, candidateUrl));
 
         if (videoSources.length > 0 || metadata.videoUrl || metadata.title !== 'Unknown') {
           return { metadata, videoSources };
         }
-      } catch {
-        continue;
-      }
+      } catch { continue; }
     }
   }
 
@@ -800,7 +1031,6 @@ function buildCandidatePageUrls(url: string): string[] {
   if (/(?:facebook\.com)/i.test(url)) {
     candidates.push(url.replace('://www.facebook.com', '://m.facebook.com'));
     candidates.push(url.replace('://www.facebook.com', '://mbasic.facebook.com'));
-
     const reelId = url.match(/facebook\.com\/reel\/(\d+)/i)?.[1] || url.match(/[?&]v=(\d+)/i)?.[1];
     if (reelId) {
       candidates.push(`https://m.facebook.com/watch/?v=${reelId}`);
@@ -813,7 +1043,6 @@ function buildCandidatePageUrls(url: string): string[] {
 
 function normalizeExtractedUrl(raw: string): string {
   if (!raw) return '';
-
   return raw
     .replace(/\\u0025/gi, '%')
     .replace(/\\u0026/gi, '&')
@@ -843,31 +1072,16 @@ async function tryJinaMirror(url: string): Promise<PageData | null> {
       headers: { 'User-Agent': USER_AGENTS[0] },
       signal: AbortSignal.timeout(12000),
     });
-
     if (!response.ok) return null;
-
     const body = await response.text();
-    const videoSources = extractVideoSources(body, url);
+    const videoSources = filterAdSources(extractVideoSources(body, url));
     const metadata = {
-      title: 'Unknown',
-      description: '',
-      thumbnail: '',
-      duration: '',
-      siteName: new URL(url).hostname,
-      type: 'video',
-      videoUrl: '',
-      resolution: '',
-      author: '',
-      keywords: '',
+      title: 'Unknown', description: '', thumbnail: '', duration: '',
+      siteName: new URL(url).hostname, type: 'video', videoUrl: '',
+      resolution: '', author: '', keywords: '',
     };
-
-    if (videoSources.length > 0) {
-      return { metadata, videoSources };
-    }
-  } catch {
-    // ignore mirror fallback failures
-  }
-
+    if (videoSources.length > 0) return { metadata, videoSources };
+  } catch {}
   return null;
 }
 
@@ -907,12 +1121,13 @@ function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
 
   const addSource = (rawUrl: string, quality?: string, format?: string) => {
     if (!rawUrl || rawUrl.startsWith('data:') || rawUrl.startsWith('blob:') || rawUrl.length < 10) return;
+    if (isAdUrl(rawUrl)) return;
     try {
       const resolved = rawUrl.startsWith('http') ? rawUrl : new URL(rawUrl, pageUrl).href;
       if (seenUrls.has(resolved)) return;
       seenUrls.add(resolved);
       sources.push({ url: resolved, quality, format });
-    } catch { /* invalid URL */ }
+    } catch {}
   };
 
   let m;
@@ -923,21 +1138,18 @@ function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
     const tag = m[0];
     const srcMatch = tag.match(/\ssrc=["']([^"']+)["']/i);
     if (srcMatch) addSource(srcMatch[1]);
-    // data-src (lazy loaded)
     const dataSrcMatch = tag.match(/\sdata-src=["']([^"']+)["']/i);
     if (dataSrcMatch) addSource(dataSrcMatch[1]);
-    // data-video-src
     const dataVideoSrc = tag.match(/\sdata-video-src=["']([^"']+)["']/i);
     if (dataVideoSrc) addSource(dataVideoSrc[1]);
   }
 
-  // 2. <source> tags (inside or outside video elements)
+  // 2. <source> tags
   const sourceRegex = /<source[^>]*\ssrc=["']([^"']+)["'][^>]*(?:type=["']([^"']*)["'])?/gi;
   while ((m = sourceRegex.exec(html)) !== null) {
     const fmt = m[2]?.split('/')[1]?.split(';')[0];
     addSource(m[1], undefined, fmt);
   }
-  // Reverse attribute order
   const sourceAlt = /<source[^>]*(?:type=["']([^"']*)["'])[^>]*\ssrc=["']([^"']+)["']/gi;
   while ((m = sourceAlt.exec(html)) !== null) {
     const fmt = m[1]?.split('/')[1]?.split(';')[0];
@@ -954,11 +1166,11 @@ function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
   const tw = html.match(/<meta[^>]*(?:property|name)=["']twitter:player:stream["'][^>]*content=["']([^"']+)["']/i);
   if (tw) addSource(tw[1]);
 
-  // 5. Direct video file URLs anywhere in HTML
+  // 5. Direct video file URLs
   const directLinkRegex = /["'](https?:\/\/[^"'\s<>]+\.(?:mp4|webm|mov|m4v|avi|mkv|flv|wmv|3gp|ogv)(?:\?[^"'\s<>]*)?)["']/gi;
   while ((m = directLinkRegex.exec(html)) !== null) addSource(m[1]);
 
-  // 6. JSON-LD contentUrl / embedUrl / video objects
+  // 6. JSON-LD
   const jsonLdRegex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   while ((m = jsonLdRegex.exec(html)) !== null) {
     try {
@@ -972,10 +1184,10 @@ function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
         if (obj['@graph']) walkJsonLd(obj['@graph']);
       };
       walkJsonLd(JSON.parse(m[1]));
-    } catch { /* invalid json */ }
+    } catch {}
   }
 
-  // 7. JS variable patterns for video URLs
+  // 7. JS variable patterns
   const jsPatterns = [
     /["'](?:video[_-]?(?:url|src|file|path)|file[_-]?url|source[_-]?url|mp4[_-]?url|hls[_-]?url|dash[_-]?url|stream[_-]?url|download[_-]?url|media[_-]?url|content[_-]?url|playback[_-]?url)["']\s*[:=]\s*["'](https?:\/\/[^"']+)["']/gi,
     /(?:videoUrl|videoSrc|fileSrc|streamUrl|mp4Url|hlsUrl|downloadUrl|mediaUrl|contentUrl|playbackUrl|sourceUrl)\s*[:=]\s*["'](https?:\/\/[^"']+)["']/gi,
@@ -991,11 +1203,10 @@ function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
   const dashRegex = /["'](https?:\/\/[^"'\s<>]+\.mpd(?:\?[^"'\s<>]*)?)["']/gi;
   while ((m = dashRegex.exec(html)) !== null) addSource(m[1], undefined, 'dash');
 
-  // 9. <iframe> embeds pointing to known players
+  // 9. <iframe> embeds
   const iframeRegex = /<iframe[^>]*\ssrc=["']([^"']+)["']/gi;
   while ((m = iframeRegex.exec(html)) !== null) {
     const iframeSrc = m[1];
-    // Only extract if it looks like a video embed
     if (/\.(mp4|webm|mov|m3u8)/.test(iframeSrc) || /embed|player|video/i.test(iframeSrc)) {
       addSource(iframeSrc);
     }
@@ -1005,28 +1216,26 @@ function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
   const dataAttrRegex = /data-(?:video|src|url|file|media|stream|hd|sd|mobile)[_-]?(?:url|src|file|href)?=["'](https?:\/\/[^"']+)["']/gi;
   while ((m = dataAttrRegex.exec(html)) !== null) addSource(m[1]);
 
-  // 11. window.__INITIAL_STATE__ or similar SSR data blobs
+  // 11. SSR data blobs
   const ssrBlobRegex = /(?:window\.__[A-Z_]+__|window\.\w+Data|window\.initialProps)\s*=\s*(\{[\s\S]*?\});?\s*(?:<\/script>|\n)/gi;
   while ((m = ssrBlobRegex.exec(html)) !== null) {
     try {
       const blob = m[1];
-      // Extract URLs from the blob
       const urlsInBlob = /https?:\/\/[^"'\s<>\\]+\.(?:mp4|webm|m3u8|mov|flv)(?:\?[^"'\s<>\\]*)?/gi;
       let u;
       while ((u = urlsInBlob.exec(blob)) !== null) {
         addSource(u[0].replace(/\\u0026/g, '&').replace(/\\\//g, '/'));
       }
-    } catch { /* ignore */ }
+    } catch {}
   }
 
-  // 12. Platform-specific JSON keys (helps with Facebook and similar players)
+  // 12. Platform-specific JSON keys
   const keyedUrlPatterns = [
     'playable_url', 'playable_url_quality_hd',
     'browser_native_sd_url', 'browser_native_hd_url',
     'sd_src', 'hd_src', 'sd_src_no_ratelimit', 'hd_src_no_ratelimit',
     'video_url', 'video_playback_url',
   ];
-
   for (const key of keyedUrlPatterns) {
     const pattern = new RegExp(`["']${key}["']\\s*:\\s*["']([^"']+)["']`, 'gi');
     while ((m = pattern.exec(html)) !== null) {
@@ -1035,7 +1244,7 @@ function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
     }
   }
 
-  // 13. Escaped CDN links without explicit file extensions
+  // 13. Escaped CDN links
   const escapedCdnRegex = /(https?:\\\\\/\\\\\/[^"'\\]+(?:fbcdn\.net|cdninstagram\.com|twimg\.com)[^"']*)/gi;
   while ((m = escapedCdnRegex.exec(html)) !== null) {
     const candidate = normalizeExtractedUrl(m[1]);
@@ -1057,55 +1266,33 @@ async function verifySingleSource(source: VideoSource, refererUrl?: string): Pro
   const commonHeaders: Record<string, string> = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
   };
-
-  if (refererUrl) {
-    commonHeaders['Referer'] = refererUrl;
-  }
+  if (refererUrl) commonHeaders['Referer'] = refererUrl;
 
   try {
     const headRes = await fetch(source.url, {
-      method: 'HEAD',
-      redirect: 'follow',
-      headers: commonHeaders,
+      method: 'HEAD', redirect: 'follow', headers: commonHeaders,
       signal: AbortSignal.timeout(7000),
     });
-
     const headContentType = (headRes.headers.get('content-type') || '').toLowerCase();
     const headContentLength = headRes.headers.get('content-length');
-
     if (headRes.ok && isLikelyVideoSource(headContentType, source)) {
-      return {
-        ...source,
-        size: headContentLength ? formatBytes(parseInt(headContentLength)) : source.size,
-        format: source.format || guessFormat(headContentType, source.url),
-      };
+      return { ...source, size: headContentLength ? formatBytes(parseInt(headContentLength)) : source.size, format: source.format || guessFormat(headContentType, source.url) };
     }
-  } catch {
-    // Some hosts block HEAD, fallback to ranged GET below
-  }
+  } catch {}
 
   try {
     const getRes = await fetch(source.url, {
-      method: 'GET',
-      redirect: 'follow',
+      method: 'GET', redirect: 'follow',
       headers: { ...commonHeaders, Range: 'bytes=0-1' },
       signal: AbortSignal.timeout(8000),
     });
-
     const ct = (getRes.headers.get('content-type') || '').toLowerCase();
     const cl = getRes.headers.get('content-length');
     const isPartial = getRes.status === 206 || getRes.status === 200;
-
     if (isPartial && isLikelyVideoSource(ct, source)) {
-      return {
-        ...source,
-        size: cl ? formatBytes(parseInt(cl)) : source.size,
-        format: source.format || guessFormat(ct, source.url),
-      };
+      return { ...source, size: cl ? formatBytes(parseInt(cl)) : source.size, format: source.format || guessFormat(ct, source.url) };
     }
-  } catch {
-    // unreachable
-  }
+  } catch {}
 
   return null;
 }
@@ -1113,19 +1300,11 @@ async function verifySingleSource(source: VideoSource, refererUrl?: string): Pro
 function isLikelyVideoSource(contentType: string, source: VideoSource): boolean {
   const ct = contentType.toLowerCase();
   const url = source.url.toLowerCase();
-
   return (
-    ct.includes('video') ||
-    ct.includes('octet-stream') ||
-    ct.includes('mp4') ||
-    ct.includes('webm') ||
-    ct.includes('mpegurl') ||
-    ct.includes('x-mpegurl') ||
-    ct.includes('vnd.apple.mpegurl') ||
-    ct.includes('dash') ||
-    ct.includes('matroska') ||
-    source.format === 'hls' ||
-    source.format === 'dash' ||
+    ct.includes('video') || ct.includes('octet-stream') || ct.includes('mp4') ||
+    ct.includes('webm') || ct.includes('mpegurl') || ct.includes('x-mpegurl') ||
+    ct.includes('vnd.apple.mpegurl') || ct.includes('dash') || ct.includes('matroska') ||
+    source.format === 'hls' || source.format === 'dash' ||
     /\.(?:mp4|webm|mov|m3u8|mpd|m4v|flv|mkv|avi|ogv)(?:\?|$)/.test(url) ||
     /(fbcdn\.net|cdninstagram\.com|twimg\.com)\/.+/.test(url)
   );
@@ -1141,7 +1320,6 @@ function formatBytes(bytes: number): string {
 function guessFormat(contentType: string, url: string): string {
   const ct = contentType.toLowerCase();
   const u = url.toLowerCase();
-
   if (ct.includes('mp4') || u.includes('.mp4')) return 'mp4';
   if (ct.includes('webm') || u.includes('.webm')) return 'webm';
   if (ct.includes('mpegurl') || ct.includes('x-mpegurl') || ct.includes('vnd.apple.mpegurl') || u.includes('.m3u8')) return 'hls';
