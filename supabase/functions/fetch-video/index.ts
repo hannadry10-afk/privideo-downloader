@@ -1,9 +1,50 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
+
+// ── In-memory cache (survives across warm invocations) ──
+const resultCache = new Map<string, { data: unknown; timestamp: number }>();
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+function getCached(url: string): unknown | null {
+  const entry = resultCache.get(url);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+    resultCache.delete(url);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCache(url: string, data: unknown) {
+  // Evict oldest entries if cache grows too large
+  if (resultCache.size > 500) {
+    const oldest = resultCache.keys().next().value;
+    if (oldest) resultCache.delete(oldest);
+  }
+  resultCache.set(url, { data, timestamp: Date.now() });
+}
+
+// ── Rate limiter (per IP, in-memory) ──
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX = 15; // 15 requests per minute per IP
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitMap.set(ip, { count: 1, windowStart: now });
+    return false;
+  }
+  entry.count++;
+  if (entry.count > RATE_LIMIT_MAX) return true;
+  return false;
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -11,6 +52,14 @@ serve(async (req) => {
   }
 
   try {
+    // Rate limiting
+    const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || req.headers.get('cf-connecting-ip')
+      || 'unknown';
+    if (isRateLimited(clientIp)) {
+      return jsonResponse({ success: false, error: 'Rate limit exceeded. Please wait a moment before trying again.' }, 429);
+    }
+
     const { url } = await req.json();
     if (!url) {
       return jsonResponse({ success: false, error: 'URL is required' }, 400);
@@ -18,89 +67,165 @@ serve(async (req) => {
 
     console.log('Processing video URL:', url);
 
+    // Check in-memory cache first
+    const cached = getCached(url);
+    if (cached) {
+      console.log('Cache hit for:', url);
+      return jsonResponse(cached);
+    }
+
+    // Check database cache (persistent across cold starts)
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const sb = createClient(supabaseUrl, supabaseKey);
+      const { data: dbCached } = await sb
+        .from('videos')
+        .select('*')
+        .eq('source_url', url)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (dbCached && dbCached.video_url) {
+        // Check if cached entry is less than 1 hour old
+        const age = Date.now() - new Date(dbCached.created_at).getTime();
+        if (age < 60 * 60 * 1000) {
+          console.log('DB cache hit for:', url);
+          const dbResult = {
+            success: true,
+            type: 'direct' as const,
+            url: dbCached.video_url,
+            filename: `${(dbCached.title || 'video').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().replace(/\s+/g, '_')}.${dbCached.format || 'mp4'}`,
+            metadata: {
+              title: dbCached.title,
+              description: dbCached.description || '',
+              thumbnail: dbCached.thumbnail || '',
+              duration: dbCached.duration || '',
+              siteName: dbCached.site_name || '',
+              type: 'video',
+              author: dbCached.author || '',
+            },
+            videoSources: [{ url: dbCached.video_url, quality: dbCached.quality || 'HD', format: dbCached.format || 'mp4' }],
+          };
+          setCache(url, dbResult);
+          return jsonResponse(dbResult);
+        }
+      }
+    } catch (e) { console.log('DB cache check failed:', e); }
+
     // Fetch page with multiple user-agent strategies
     const pageData = await fetchPageDataWithRetry(url);
 
+    // Helper to cache + return results
+    const cacheAndReturn = (result: Record<string, unknown>) => {
+      setCache(url, result);
+      // Save to DB asynchronously (best-effort)
+      if ((result as any).success && (result as any).url) {
+        try {
+          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+          const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+          const sb = createClient(supabaseUrl, supabaseKey);
+          const meta = (result as any).metadata || {};
+          const sources = (result as any).videoSources || [];
+          sb.from('videos').insert({
+            video_url: (result as any).url || sources[0]?.url || '',
+            source_url: url,
+            title: meta.title || 'Untitled Video',
+            description: meta.description || '',
+            thumbnail: meta.thumbnail || '',
+            duration: meta.duration || '',
+            site_name: meta.siteName || '',
+            author: meta.author || '',
+            quality: sources[0]?.quality || '',
+            format: sources[0]?.format || 'mp4',
+            size: sources[0]?.size || '',
+          }).then(() => {}).catch(() => {});
+        } catch {}
+      }
+      return jsonResponse(result);
+    };
+
     // Try cobalt API first (multiple instances)
     const cobaltResult = await tryCobaltMulti(url, pageData);
-    if (cobaltResult) return jsonResponse(cobaltResult);
+    if (cobaltResult) return cacheAndReturn(cobaltResult);
 
     // Platform-specific extractors
     if (isYouTube(url)) {
       const invResult = await tryInvidious(url, pageData);
-      if (invResult) return jsonResponse(invResult);
+      if (invResult) return cacheAndReturn(invResult);
       const pipedResult = await tryPiped(url, pageData);
-      if (pipedResult) return jsonResponse(pipedResult);
+      if (pipedResult) return cacheAndReturn(pipedResult);
     }
 
     if (isTikTok(url)) {
       const ttResult = await tryTikTok(url, pageData);
-      if (ttResult) return jsonResponse(ttResult);
+      if (ttResult) return cacheAndReturn(ttResult);
     }
 
     if (isTwitter(url)) {
       const twResult = await tryTwitter(url, pageData);
-      if (twResult) return jsonResponse(twResult);
+      if (twResult) return cacheAndReturn(twResult);
     }
 
     if (isInstagram(url)) {
       const igResult = await tryInstagram(url, pageData);
-      if (igResult) return jsonResponse(igResult);
+      if (igResult) return cacheAndReturn(igResult);
     }
 
     if (isDailymotion(url)) {
       const dmResult = await tryDailymotion(url, pageData);
-      if (dmResult) return jsonResponse(dmResult);
+      if (dmResult) return cacheAndReturn(dmResult);
     }
 
     if (isVimeo(url)) {
       const vimResult = await tryVimeo(url, pageData);
-      if (vimResult) return jsonResponse(vimResult);
+      if (vimResult) return cacheAndReturn(vimResult);
     }
 
     if (isRumble(url)) {
       const rResult = await tryRumble(url, pageData);
-      if (rResult) return jsonResponse(rResult);
+      if (rResult) return cacheAndReturn(rResult);
     }
 
     if (isStreamable(url)) {
       const stResult = await tryStreamable(url, pageData);
-      if (stResult) return jsonResponse(stResult);
+      if (stResult) return cacheAndReturn(stResult);
     }
 
     if (isRedditVideo(url)) {
       const rdResult = await tryReddit(url, pageData);
-      if (rdResult) return jsonResponse(rdResult);
+      if (rdResult) return cacheAndReturn(rdResult);
     }
 
     if (isTwitch(url)) {
       const twResult = await tryTwitch(url, pageData);
-      if (twResult) return jsonResponse(twResult);
+      if (twResult) return cacheAndReturn(twResult);
     }
 
     if (isBilibili(url)) {
       const blResult = await tryBilibili(url, pageData);
-      if (blResult) return jsonResponse(blResult);
+      if (blResult) return cacheAndReturn(blResult);
     }
 
     if (isOKru(url)) {
       const okResult = await tryOKru(url, pageData);
-      if (okResult) return jsonResponse(okResult);
+      if (okResult) return cacheAndReturn(okResult);
     }
 
     if (is9anime(url)) {
       const animeResult = await tryAnime(url, pageData);
-      if (animeResult) return jsonResponse(animeResult);
+      if (animeResult) return cacheAndReturn(animeResult);
     }
 
     if (isAdultSite(url)) {
       const adultResult = await tryAdultSite(url, pageData);
-      if (adultResult) return jsonResponse(adultResult);
+      if (adultResult) return cacheAndReturn(adultResult);
     }
 
     // Deep iframe scraping for unknown sites
     const deepResult = await tryDeepIframeScrape(url, pageData);
-    if (deepResult) return jsonResponse(deepResult);
+    if (deepResult) return cacheAndReturn(deepResult);
 
     // Filter and verify scraped sources
     const sourceCandidates = filterAdSources(mergeUniqueSources(
@@ -111,7 +236,7 @@ serve(async (req) => {
     if (sourceCandidates.length > 0) {
       const verified = await verifyVideoSources(sourceCandidates, url);
       if (verified.length > 0) {
-        return jsonResponse({
+        return cacheAndReturn({
           success: true,
           type: verified.length === 1 ? 'direct' : 'picker',
           url: verified.length === 1 ? verified[0].url : undefined,
@@ -125,7 +250,7 @@ serve(async (req) => {
         });
       }
 
-      return jsonResponse({
+      return cacheAndReturn({
         success: true,
         type: 'metadata_only',
         metadata: pageData.metadata,
@@ -133,7 +258,7 @@ serve(async (req) => {
       });
     }
 
-    return jsonResponse({
+    return cacheAndReturn({
       success: true,
       type: 'metadata_only',
       metadata: pageData.metadata,
