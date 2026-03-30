@@ -1488,6 +1488,16 @@ function buildCandidatePageUrls(url: string): string[] {
     }
   }
 
+  // Bilibili mobile
+  if (/bilibili\.com/i.test(url)) {
+    candidates.push(url.replace('://www.bilibili.com', '://m.bilibili.com'));
+  }
+
+  // OK.ru mobile
+  if (/ok\.ru/i.test(url)) {
+    candidates.push(url.replace('://ok.ru', '://m.ok.ru'));
+  }
+
   return [...new Set(candidates)];
 }
 
