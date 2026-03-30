@@ -73,6 +73,31 @@ serve(async (req) => {
       if (rdResult) return jsonResponse(rdResult);
     }
 
+    if (isTwitch(url)) {
+      const twResult = await tryTwitch(url, pageData);
+      if (twResult) return jsonResponse(twResult);
+    }
+
+    if (isBilibili(url)) {
+      const blResult = await tryBilibili(url, pageData);
+      if (blResult) return jsonResponse(blResult);
+    }
+
+    if (isOKru(url)) {
+      const okResult = await tryOKru(url, pageData);
+      if (okResult) return jsonResponse(okResult);
+    }
+
+    if (is9anime(url)) {
+      const animeResult = await tryAnime(url, pageData);
+      if (animeResult) return jsonResponse(animeResult);
+    }
+
+    if (isAdultSite(url)) {
+      const adultResult = await tryAdultSite(url, pageData);
+      if (adultResult) return jsonResponse(adultResult);
+    }
+
     // Deep iframe scraping for unknown sites
     const deepResult = await tryDeepIframeScrape(url, pageData);
     if (deepResult) return jsonResponse(deepResult);
