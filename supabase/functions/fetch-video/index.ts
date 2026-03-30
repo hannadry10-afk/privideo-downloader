@@ -264,7 +264,6 @@ serve(async (req) => {
       metadata: pageData.metadata,
       videoSources: [],
     });
-    });
 
   } catch (error) {
     console.error('Error processing video:', error);
