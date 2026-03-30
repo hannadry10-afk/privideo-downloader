@@ -73,6 +73,31 @@ serve(async (req) => {
       if (rdResult) return jsonResponse(rdResult);
     }
 
+    if (isTwitch(url)) {
+      const twResult = await tryTwitch(url, pageData);
+      if (twResult) return jsonResponse(twResult);
+    }
+
+    if (isBilibili(url)) {
+      const blResult = await tryBilibili(url, pageData);
+      if (blResult) return jsonResponse(blResult);
+    }
+
+    if (isOKru(url)) {
+      const okResult = await tryOKru(url, pageData);
+      if (okResult) return jsonResponse(okResult);
+    }
+
+    if (is9anime(url)) {
+      const animeResult = await tryAnime(url, pageData);
+      if (animeResult) return jsonResponse(animeResult);
+    }
+
+    if (isAdultSite(url)) {
+      const adultResult = await tryAdultSite(url, pageData);
+      if (adultResult) return jsonResponse(adultResult);
+    }
+
     // Deep iframe scraping for unknown sites
     const deepResult = await tryDeepIframeScrape(url, pageData);
     if (deepResult) return jsonResponse(deepResult);
@@ -139,6 +164,11 @@ function isVimeo(url: string): boolean { return /vimeo\.com\/\d+/i.test(url); }
 function isRumble(url: string): boolean { return /rumble\.com/i.test(url); }
 function isStreamable(url: string): boolean { return /streamable\.com\//i.test(url); }
 function isRedditVideo(url: string): boolean { return /(?:reddit\.com|redd\.it)/i.test(url); }
+function isTwitch(url: string): boolean { return /(?:twitch\.tv|clips\.twitch\.tv)/i.test(url); }
+function isBilibili(url: string): boolean { return /(?:bilibili\.com|b23\.tv)/i.test(url); }
+function isOKru(url: string): boolean { return /(?:ok\.ru|odnoklassniki\.ru)/i.test(url); }
+function is9anime(url: string): boolean { return /(?:9anime|gogoanime|aniwave|animesuge|zoro\.to|aniwatch|kaido\.to|animepahe)/i.test(url); }
+function isAdultSite(url: string): boolean { return /(?:xvideos|pornhub|xhamster|redtube|youporn|tube8|spankbang|xnxx|eporner|tnaflix|drtuber)/i.test(url); }
 
 function generateFilename(title: string, source: VideoSource): string {
   const safeName = (title || 'video').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().replace(/\s+/g, '_').slice(0, 80);
@@ -889,7 +919,427 @@ async function tryReddit(url: string, pageData: PageData): Promise<Record<string
   return null;
 }
 
-// ── Deep iframe scraping (for unknown sites) ──
+// ── Twitch extraction ──
+
+async function tryTwitch(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  // Twitch clips
+  const clipSlug = url.match(/clips\.twitch\.tv\/([A-Za-z0-9_-]+)/i)?.[1] 
+    || url.match(/twitch\.tv\/\w+\/clip\/([A-Za-z0-9_-]+)/i)?.[1];
+  
+  if (clipSlug) {
+    // Try clips.twitch.tv direct page scrape
+    try {
+      const res = await fetch(`https://clips.twitch.tv/${clipSlug}`, {
+        headers: { 'User-Agent': USER_AGENTS[0], 'Accept': 'text/html' },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.ok) {
+        const html = await res.text();
+        const sources: VideoSource[] = [];
+        
+        // Extract from clip data in page
+        const qualityOptions = html.match(/"quality_options"\s*:\s*(\[[\s\S]*?\])/);
+        if (qualityOptions) {
+          try {
+            const opts = JSON.parse(qualityOptions[1]);
+            for (const opt of opts) {
+              if (opt.source) sources.push({ url: opt.source, quality: opt.quality || 'HD', format: 'mp4', type: 'combined' });
+            }
+          } catch {}
+        }
+        
+        // Direct mp4 from thumbnails URL pattern
+        const thumbMatch = html.match(/https:\/\/clips-media-assets2\.twitch\.tv\/[^"'\s]+/g);
+        if (thumbMatch) {
+          for (const t of thumbMatch) {
+            const mp4Url = t.replace(/-preview-\d+x\d+\.\w+$/, '.mp4');
+            if (mp4Url.endsWith('.mp4')) sources.push({ url: mp4Url, quality: 'HD', format: 'mp4', type: 'combined' });
+          }
+        }
+
+        // Video src from embedded player
+        const videoSrc = /["'](https?:\/\/[^"'\s]+(?:\.mp4|clips-media)[^"'\s]*)["']/gi;
+        let m;
+        while ((m = videoSrc.exec(html)) !== null) {
+          if (!isAdUrl(m[1])) sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: 'mp4', type: 'combined' });
+        }
+
+        const meta = extractMetadata(html, url);
+        meta.siteName = 'Twitch';
+        if (sources.length > 0) return buildPickerResult(mergeUniqueSources(sources), meta);
+      }
+    } catch (e) { console.log('Twitch clip scrape failed:', e); }
+  }
+
+  // Twitch VODs - try to extract from page
+  try {
+    const vodMatch = url.match(/twitch\.tv\/videos\/(\d+)/i);
+    if (vodMatch) {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': USER_AGENTS[0], 'Accept': 'text/html' },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.ok) {
+        const html = await res.text();
+        const sources: VideoSource[] = [];
+        
+        // HLS URLs in page data
+        const hlsMatch = /["'](https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)["']/gi;
+        let m;
+        while ((m = hlsMatch.exec(html)) !== null) {
+          if (!isAdUrl(m[1])) sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Auto (HLS)', format: 'hls', type: 'combined' });
+        }
+        
+        const meta = extractMetadata(html, url);
+        meta.siteName = 'Twitch';
+        if (sources.length > 0) return buildPickerResult(sources, meta);
+      }
+    }
+  } catch (e) { console.log('Twitch VOD failed:', e); }
+
+  return null;
+}
+
+// ── Bilibili extraction ──
+
+async function tryBilibili(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  // Extract BV or av ID
+  const bvMatch = url.match(/BV([A-Za-z0-9]+)/i);
+  const avMatch = url.match(/av(\d+)/i);
+  const bvid = bvMatch ? `BV${bvMatch[1]}` : null;
+  
+  // Try Bilibili API
+  if (bvid) {
+    try {
+      // Get video info
+      const infoRes = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`, {
+        headers: { 'User-Agent': USER_AGENTS[0], 'Referer': 'https://www.bilibili.com/' },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (infoRes.ok) {
+        const infoData = await infoRes.json();
+        const videoData = infoData.data;
+        if (videoData) {
+          const cid = videoData.cid;
+          const aid = videoData.aid;
+          
+          // Get playback URL
+          const playRes = await fetch(`https://api.bilibili.com/x/player/playurl?bvid=${bvid}&cid=${cid}&qn=80&fnval=16`, {
+            headers: { 'User-Agent': USER_AGENTS[0], 'Referer': `https://www.bilibili.com/video/${bvid}` },
+            signal: AbortSignal.timeout(10000),
+          });
+          
+          const sources: VideoSource[] = [];
+          if (playRes.ok) {
+            const playData = await playRes.json();
+            const d = playData.data;
+            
+            // DASH streams
+            if (d?.dash) {
+              for (const v of d.dash.video || []) {
+                if (v.baseUrl || v.base_url) {
+                  const quality = v.height ? `${v.height}p` : `Quality ${v.id}`;
+                  sources.push({ url: v.baseUrl || v.base_url, quality, format: 'mp4', type: 'video' });
+                }
+              }
+              for (const a of d.dash.audio || []) {
+                if (a.baseUrl || a.base_url) {
+                  sources.push({ url: a.baseUrl || a.base_url, quality: 'Audio', format: 'mp3', type: 'audio' });
+                }
+              }
+            }
+            
+            // Direct URLs (durl)
+            if (d?.durl) {
+              for (const seg of d.durl) {
+                if (seg.url) sources.push({ url: seg.url, quality: 'Direct', format: 'flv', type: 'combined' });
+                for (const backup of seg.backup_url || []) {
+                  sources.push({ url: backup, quality: 'Backup', format: 'flv', type: 'combined' });
+                }
+              }
+            }
+          }
+          
+          const meta = {
+            ...pageData.metadata,
+            title: videoData.title || pageData.metadata.title,
+            description: videoData.desc || pageData.metadata.description,
+            thumbnail: videoData.pic || pageData.metadata.thumbnail,
+            author: videoData.owner?.name || pageData.metadata.author,
+            duration: videoData.duration?.toString() || pageData.metadata.duration,
+            siteName: 'Bilibili',
+          };
+          
+          if (sources.length > 0) return buildPickerResult(sources, meta);
+        }
+      }
+    } catch (e) { console.log('Bilibili API failed:', e); }
+  }
+
+  // Fallback: scrape page for video URLs
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENTS[0], 'Accept': 'text/html', 'Referer': 'https://www.bilibili.com/' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) {
+      const html = await res.text();
+      const sources: VideoSource[] = [];
+      
+      // __playinfo__ JSON blob
+      const playInfoMatch = html.match(/window\.__playinfo__\s*=\s*(\{[\s\S]*?\})\s*(?:<\/script>|;\s*window)/);
+      if (playInfoMatch) {
+        try {
+          const playInfo = JSON.parse(playInfoMatch[1]);
+          const d = playInfo.data;
+          if (d?.dash) {
+            for (const v of d.dash.video || []) {
+              if (v.baseUrl || v.base_url) sources.push({ url: v.baseUrl || v.base_url, quality: v.height ? `${v.height}p` : 'HD', format: 'mp4', type: 'video' });
+            }
+          }
+          if (d?.durl) {
+            for (const seg of d.durl) {
+              if (seg.url) sources.push({ url: seg.url, quality: 'Direct', format: 'flv', type: 'combined' });
+            }
+          }
+        } catch {}
+      }
+      
+      const meta = extractMetadata(html, url);
+      meta.siteName = 'Bilibili';
+      if (sources.length > 0) return buildPickerResult(sources, meta);
+    }
+  } catch (e) { console.log('Bilibili scrape failed:', e); }
+
+  return null;
+}
+
+// ── OK.ru extraction ──
+
+async function tryOKru(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENTS[0], 'Accept': 'text/html' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const sources: VideoSource[] = [];
+
+    // OK.ru embeds video data in data-options JSON
+    const dataOptionsMatch = html.match(/data-options=["'](\{[\s\S]*?\})["']/);
+    if (dataOptionsMatch) {
+      try {
+        const options = JSON.parse(decodeHtmlEntities(dataOptionsMatch[1]));
+        const metadata = options?.flashvars?.metadata;
+        if (metadata) {
+          const metaObj = typeof metadata === 'string' ? JSON.parse(metadata) : metadata;
+          const videos = metaObj?.videos;
+          if (Array.isArray(videos)) {
+            for (const v of videos) {
+              if (v.url) sources.push({ url: v.url, quality: v.name || 'Direct', format: 'mp4', type: 'combined' });
+            }
+          }
+          // HLS
+          if (metaObj?.hlsManifestUrl) sources.push({ url: metaObj.hlsManifestUrl, quality: 'Auto (HLS)', format: 'hls', type: 'combined' });
+          if (metaObj?.hlsMasterPlaylistUrl) sources.push({ url: metaObj.hlsMasterPlaylistUrl, quality: 'Auto (HLS)', format: 'hls', type: 'combined' });
+          // DASH
+          if (metaObj?.dashManifestUrl) sources.push({ url: metaObj.dashManifestUrl, quality: 'Auto (DASH)', format: 'dash', type: 'combined' });
+        }
+      } catch (e) { console.log('OK.ru data-options parse error:', e); }
+    }
+
+    // Fallback: find video URLs in page
+    const okVideoRegex = /["'](https?:\/\/[^"'\s]+(?:vk\.me|mycdn\.me|odnoklassniki)[^"'\s]*\.(?:mp4|m3u8|mpd)[^"'\s]*)["']/gi;
+    let m;
+    while ((m = okVideoRegex.exec(html)) !== null) {
+      if (!isAdUrl(m[1])) sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: guessFormat('', m[1]), type: 'combined' });
+    }
+
+    const meta = extractMetadata(html, url);
+    meta.siteName = 'OK.ru';
+    if (sources.length > 0) return buildPickerResult(filterAdSources(mergeUniqueSources(sources)), meta);
+  } catch (e) { console.log('OK.ru extraction failed:', e); }
+
+  return null;
+}
+
+// ── Anime site extraction ──
+
+async function tryAnime(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENTS[0], 'Accept': 'text/html' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const sources: VideoSource[] = [];
+
+    // Common anime player patterns
+    // 1. Direct video/source tags
+    const extracted = extractVideoSources(html, url);
+    sources.push(...extracted);
+
+    // 2. Player JS configs (common in anime sites)
+    const playerConfigs = [
+      /(?:sources|file|src)\s*[:=]\s*\[\s*\{[^}]*["'](?:file|src|url)["']\s*:\s*["'](https?:\/\/[^"']+)["']/gi,
+      /(?:var|let|const)\s+\w*(?:source|video|stream|player)\w*\s*=\s*["'](https?:\/\/[^"']+\.(?:mp4|m3u8|mpd)[^"']*)["']/gi,
+      /(?:data-(?:video|src|source|stream))=["'](https?:\/\/[^"']+)["']/gi,
+    ];
+    for (const pat of playerConfigs) {
+      let m;
+      while ((m = pat.exec(html)) !== null) {
+        if (!isAdUrl(m[1])) sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: guessFormat('', m[1]), type: 'combined' });
+      }
+    }
+
+    // 3. Encrypted/encoded URLs (base64)
+    const b64Regex = /atob\(["']([A-Za-z0-9+/=]{20,})["']\)/g;
+    let m;
+    while ((m = b64Regex.exec(html)) !== null) {
+      try {
+        const decoded = atob(m[1]);
+        if (/^https?:\/\/.+\.(mp4|m3u8|mpd)/i.test(decoded) && !isAdUrl(decoded)) {
+          sources.push({ url: decoded, quality: 'Decoded', format: guessFormat('', decoded), type: 'combined' });
+        }
+      } catch {}
+    }
+
+    // 4. Recursive iframe scrape for embedded players
+    const iframeSrcs: string[] = [];
+    const iframeRegex = /<iframe[^>]*\ssrc=["']([^"']+)["']/gi;
+    while ((m = iframeRegex.exec(html)) !== null) {
+      const src = m[1];
+      if (!isAdUrl(src)) {
+        try {
+          const resolved = src.startsWith('http') ? src : new URL(src, url).href;
+          iframeSrcs.push(resolved);
+        } catch {}
+      }
+    }
+
+    for (const iframeSrc of iframeSrcs.slice(0, 5)) {
+      try {
+        const iRes = await fetch(iframeSrc, {
+          headers: { 'User-Agent': USER_AGENTS[0], 'Accept': 'text/html', 'Referer': url },
+          redirect: 'follow',
+          signal: AbortSignal.timeout(8000),
+        });
+        if (iRes.ok) {
+          const iHtml = await iRes.text();
+          sources.push(...extractVideoSources(iHtml, iframeSrc));
+          
+          // Check for nested iframes (common in anime)
+          const nestedIframes: string[] = [];
+          const niRegex = /<iframe[^>]*\ssrc=["']([^"']+)["']/gi;
+          let nm;
+          while ((nm = niRegex.exec(iHtml)) !== null) {
+            if (!isAdUrl(nm[1])) {
+              try { nestedIframes.push(nm[1].startsWith('http') ? nm[1] : new URL(nm[1], iframeSrc).href); } catch {}
+            }
+          }
+          for (const nested of nestedIframes.slice(0, 3)) {
+            try {
+              const nRes = await fetch(nested, {
+                headers: { 'User-Agent': USER_AGENTS[0], 'Accept': 'text/html', 'Referer': iframeSrc },
+                redirect: 'follow',
+                signal: AbortSignal.timeout(8000),
+              });
+              if (nRes.ok) sources.push(...extractVideoSources(await nRes.text(), nested));
+            } catch {}
+          }
+        }
+      } catch {}
+    }
+
+    const meta = extractMetadata(html, url);
+    meta.siteName = meta.siteName || 'Anime';
+    const filtered = filterAdSources(mergeUniqueSources(sources));
+    if (filtered.length > 0) {
+      const verified = await verifyVideoSources(filtered, url);
+      if (verified.length > 0) return buildPickerResult(verified, meta);
+      return buildPickerResult(filtered, meta);
+    }
+  } catch (e) { console.log('Anime extraction failed:', e); }
+
+  return null;
+}
+
+// ── Adult site extraction ──
+
+async function tryAdultSite(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENTS[0], 'Accept': 'text/html' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const sources: VideoSource[] = [];
+
+    // These sites typically expose video URLs in specific patterns
+    // 1. html5player.setVideoUrl patterns (xvideos, xnxx)
+    const setVideoPatterns = [
+      /html5player\.set(?:Video(?:Url|HLS)|VideoUrlHigh|VideoUrlLow)\s*\(\s*["'](https?:\/\/[^"']+)["']\s*\)/gi,
+      /setVideoUrl(?:High|Low|HLS)?\s*\(\s*["'](https?:\/\/[^"']+)["']\s*\)/gi,
+    ];
+    for (const pat of setVideoPatterns) {
+      let m;
+      while ((m = pat.exec(html)) !== null) {
+        const quality = /high|hd/i.test(m[0]) ? 'HD' : /low|sd/i.test(m[0]) ? 'SD' : /hls/i.test(m[0]) ? 'Auto (HLS)' : 'Direct';
+        const format = /hls/i.test(m[0]) ? 'hls' : 'mp4';
+        sources.push({ url: normalizeExtractedUrl(m[1]), quality, format, type: 'combined' });
+      }
+    }
+
+    // 2. flashvars / playerObjList patterns (pornhub style)
+    const flashvarsMatch = html.match(/(?:var\s+)?flashvars_\d+\s*=\s*(\{[\s\S]*?\});/);
+    if (flashvarsMatch) {
+      try {
+        const fv = JSON.parse(flashvarsMatch[1]);
+        const qualityKeys = Object.keys(fv).filter(k => /quality_\d+p/.test(k));
+        for (const key of qualityKeys) {
+          if (fv[key]) sources.push({ url: fv[key], quality: key.replace('quality_', ''), format: 'mp4', type: 'combined' });
+        }
+        if (fv.mediaDefinitions && Array.isArray(fv.mediaDefinitions)) {
+          for (const md of fv.mediaDefinitions) {
+            if (md.videoUrl) sources.push({ url: md.videoUrl, quality: md.quality ? `${md.quality}p` : 'Auto', format: md.format || 'mp4', type: 'combined' });
+          }
+        }
+      } catch {}
+    }
+
+    // 3. video_url patterns (generic)
+    const genericPatterns = [
+      /["'](?:video_url|videoUrl|mp4_url|hd_url|sd_url|file_url|download_url)["']\s*:\s*["'](https?:\/\/[^"']+)["']/gi,
+      /(?:video_url|videoUrl|mp4_url|hd_url|sd_url)\s*[:=]\s*["'](https?:\/\/[^"']+)["']/gi,
+    ];
+    for (const pat of genericPatterns) {
+      let m;
+      while ((m = pat.exec(html)) !== null) {
+        if (!isAdUrl(m[1])) sources.push({ url: normalizeExtractedUrl(m[1]), quality: /hd/i.test(m[0]) ? 'HD' : 'Direct', format: 'mp4', type: 'combined' });
+      }
+    }
+
+    // 4. Standard extraction
+    sources.push(...extractVideoSources(html, url));
+
+    const meta = extractMetadata(html, url);
+    const filtered = filterAdSources(mergeUniqueSources(sources));
+    if (filtered.length > 0) return buildPickerResult(filtered, meta);
+  } catch (e) { console.log('Adult site extraction failed:', e); }
+
+  return null;
+}
+
+
 
 async function tryDeepIframeScrape(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
   // Find iframes in the page and scrape them for video sources
@@ -1036,6 +1486,16 @@ function buildCandidatePageUrls(url: string): string[] {
       candidates.push(`https://m.facebook.com/watch/?v=${reelId}`);
       candidates.push(`https://mbasic.facebook.com/watch/?v=${reelId}`);
     }
+  }
+
+  // Bilibili mobile
+  if (/bilibili\.com/i.test(url)) {
+    candidates.push(url.replace('://www.bilibili.com', '://m.bilibili.com'));
+  }
+
+  // OK.ru mobile
+  if (/ok\.ru/i.test(url)) {
+    candidates.push(url.replace('://ok.ru', '://m.ok.ru'));
   }
 
   return [...new Set(candidates)];
