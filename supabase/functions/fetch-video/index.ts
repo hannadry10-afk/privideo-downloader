@@ -153,79 +153,79 @@ serve(async (req) => {
     // Platform-specific extractors
     if (isYouTube(url)) {
       const invResult = await tryInvidious(url, pageData);
-      if (invResult) return jsonResponse(invResult);
+      if (invResult) return cacheAndReturn(invResult);
       const pipedResult = await tryPiped(url, pageData);
-      if (pipedResult) return jsonResponse(pipedResult);
+      if (pipedResult) return cacheAndReturn(pipedResult);
     }
 
     if (isTikTok(url)) {
       const ttResult = await tryTikTok(url, pageData);
-      if (ttResult) return jsonResponse(ttResult);
+      if (ttResult) return cacheAndReturn(ttResult);
     }
 
     if (isTwitter(url)) {
       const twResult = await tryTwitter(url, pageData);
-      if (twResult) return jsonResponse(twResult);
+      if (twResult) return cacheAndReturn(twResult);
     }
 
     if (isInstagram(url)) {
       const igResult = await tryInstagram(url, pageData);
-      if (igResult) return jsonResponse(igResult);
+      if (igResult) return cacheAndReturn(igResult);
     }
 
     if (isDailymotion(url)) {
       const dmResult = await tryDailymotion(url, pageData);
-      if (dmResult) return jsonResponse(dmResult);
+      if (dmResult) return cacheAndReturn(dmResult);
     }
 
     if (isVimeo(url)) {
       const vimResult = await tryVimeo(url, pageData);
-      if (vimResult) return jsonResponse(vimResult);
+      if (vimResult) return cacheAndReturn(vimResult);
     }
 
     if (isRumble(url)) {
       const rResult = await tryRumble(url, pageData);
-      if (rResult) return jsonResponse(rResult);
+      if (rResult) return cacheAndReturn(rResult);
     }
 
     if (isStreamable(url)) {
       const stResult = await tryStreamable(url, pageData);
-      if (stResult) return jsonResponse(stResult);
+      if (stResult) return cacheAndReturn(stResult);
     }
 
     if (isRedditVideo(url)) {
       const rdResult = await tryReddit(url, pageData);
-      if (rdResult) return jsonResponse(rdResult);
+      if (rdResult) return cacheAndReturn(rdResult);
     }
 
     if (isTwitch(url)) {
       const twResult = await tryTwitch(url, pageData);
-      if (twResult) return jsonResponse(twResult);
+      if (twResult) return cacheAndReturn(twResult);
     }
 
     if (isBilibili(url)) {
       const blResult = await tryBilibili(url, pageData);
-      if (blResult) return jsonResponse(blResult);
+      if (blResult) return cacheAndReturn(blResult);
     }
 
     if (isOKru(url)) {
       const okResult = await tryOKru(url, pageData);
-      if (okResult) return jsonResponse(okResult);
+      if (okResult) return cacheAndReturn(okResult);
     }
 
     if (is9anime(url)) {
       const animeResult = await tryAnime(url, pageData);
-      if (animeResult) return jsonResponse(animeResult);
+      if (animeResult) return cacheAndReturn(animeResult);
     }
 
     if (isAdultSite(url)) {
       const adultResult = await tryAdultSite(url, pageData);
-      if (adultResult) return jsonResponse(adultResult);
+      if (adultResult) return cacheAndReturn(adultResult);
     }
 
     // Deep iframe scraping for unknown sites
     const deepResult = await tryDeepIframeScrape(url, pageData);
-    if (deepResult) return jsonResponse(deepResult);
+    if (deepResult) return cacheAndReturn(deepResult);
 
     // Filter and verify scraped sources
     const sourceCandidates = filterAdSources(mergeUniqueSources(
