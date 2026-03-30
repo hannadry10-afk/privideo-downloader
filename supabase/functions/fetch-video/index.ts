@@ -1,9 +1,50 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
+
+// ── In-memory cache (survives across warm invocations) ──
+const resultCache = new Map<string, { data: unknown; timestamp: number }>();
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+function getCached(url: string): unknown | null {
+  const entry = resultCache.get(url);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+    resultCache.delete(url);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCache(url: string, data: unknown) {
+  // Evict oldest entries if cache grows too large
+  if (resultCache.size > 500) {
+    const oldest = resultCache.keys().next().value;
+    if (oldest) resultCache.delete(oldest);
+  }
+  resultCache.set(url, { data, timestamp: Date.now() });
+}
+
+// ── Rate limiter (per IP, in-memory) ──
+const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX = 15; // 15 requests per minute per IP
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitMap.set(ip, { count: 1, windowStart: now });
+    return false;
+  }
+  entry.count++;
+  if (entry.count > RATE_LIMIT_MAX) return true;
+  return false;
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -11,12 +52,67 @@ serve(async (req) => {
   }
 
   try {
+    // Rate limiting
+    const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || req.headers.get('cf-connecting-ip')
+      || 'unknown';
+    if (isRateLimited(clientIp)) {
+      return jsonResponse({ success: false, error: 'Rate limit exceeded. Please wait a moment before trying again.' }, 429);
+    }
+
     const { url } = await req.json();
     if (!url) {
       return jsonResponse({ success: false, error: 'URL is required' }, 400);
     }
 
     console.log('Processing video URL:', url);
+
+    // Check in-memory cache first
+    const cached = getCached(url);
+    if (cached) {
+      console.log('Cache hit for:', url);
+      return jsonResponse(cached);
+    }
+
+    // Check database cache (persistent across cold starts)
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const sb = createClient(supabaseUrl, supabaseKey);
+      const { data: dbCached } = await sb
+        .from('videos')
+        .select('*')
+        .eq('source_url', url)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (dbCached && dbCached.video_url) {
+        // Check if cached entry is less than 1 hour old
+        const age = Date.now() - new Date(dbCached.created_at).getTime();
+        if (age < 60 * 60 * 1000) {
+          console.log('DB cache hit for:', url);
+          const dbResult = {
+            success: true,
+            type: 'direct' as const,
+            url: dbCached.video_url,
+            filename: `${(dbCached.title || 'video').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().replace(/\s+/g, '_')}.${dbCached.format || 'mp4'}`,
+            metadata: {
+              title: dbCached.title,
+              description: dbCached.description || '',
+              thumbnail: dbCached.thumbnail || '',
+              duration: dbCached.duration || '',
+              siteName: dbCached.site_name || '',
+              type: 'video',
+              author: dbCached.author || '',
+            },
+            videoSources: [{ url: dbCached.video_url, quality: dbCached.quality || 'HD', format: dbCached.format || 'mp4' }],
+          };
+          setCache(url, dbResult);
+          return jsonResponse(dbResult);
+        }
+      }
+    } catch (e) { console.log('DB cache check failed:', e); }
 
     // Fetch page with multiple user-agent strategies
     const pageData = await fetchPageDataWithRetry(url);
