@@ -139,6 +139,11 @@ function isVimeo(url: string): boolean { return /vimeo\.com\/\d+/i.test(url); }
 function isRumble(url: string): boolean { return /rumble\.com/i.test(url); }
 function isStreamable(url: string): boolean { return /streamable\.com\//i.test(url); }
 function isRedditVideo(url: string): boolean { return /(?:reddit\.com|redd\.it)/i.test(url); }
+function isTwitch(url: string): boolean { return /(?:twitch\.tv|clips\.twitch\.tv)/i.test(url); }
+function isBilibili(url: string): boolean { return /(?:bilibili\.com|b23\.tv)/i.test(url); }
+function isOKru(url: string): boolean { return /(?:ok\.ru|odnoklassniki\.ru)/i.test(url); }
+function is9anime(url: string): boolean { return /(?:9anime|gogoanime|aniwave|animesuge|zoro\.to|aniwatch|kaido\.to|animepahe)/i.test(url); }
+function isAdultSite(url: string): boolean { return /(?:xvideos|pornhub|xhamster|redtube|youporn|tube8|spankbang|xnxx|eporner|tnaflix|drtuber)/i.test(url); }
 
 function generateFilename(title: string, source: VideoSource): string {
   const safeName = (title || 'video').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().replace(/\s+/g, '_').slice(0, 80);
