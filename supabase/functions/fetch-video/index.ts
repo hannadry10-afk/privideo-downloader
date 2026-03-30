@@ -117,9 +117,38 @@ serve(async (req) => {
     // Fetch page with multiple user-agent strategies
     const pageData = await fetchPageDataWithRetry(url);
 
+    // Helper to cache + return results
+    const cacheAndReturn = (result: Record<string, unknown>) => {
+      setCache(url, result);
+      // Save to DB asynchronously (best-effort)
+      if ((result as any).success && (result as any).url) {
+        try {
+          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+          const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+          const sb = createClient(supabaseUrl, supabaseKey);
+          const meta = (result as any).metadata || {};
+          const sources = (result as any).videoSources || [];
+          sb.from('videos').insert({
+            video_url: (result as any).url || sources[0]?.url || '',
+            source_url: url,
+            title: meta.title || 'Untitled Video',
+            description: meta.description || '',
+            thumbnail: meta.thumbnail || '',
+            duration: meta.duration || '',
+            site_name: meta.siteName || '',
+            author: meta.author || '',
+            quality: sources[0]?.quality || '',
+            format: sources[0]?.format || 'mp4',
+            size: sources[0]?.size || '',
+          }).then(() => {}).catch(() => {});
+        } catch {}
+      }
+      return jsonResponse(result);
+    };
+
     // Try cobalt API first (multiple instances)
     const cobaltResult = await tryCobaltMulti(url, pageData);
-    if (cobaltResult) return jsonResponse(cobaltResult);
+    if (cobaltResult) return cacheAndReturn(cobaltResult);
 
     // Platform-specific extractors
     if (isYouTube(url)) {
