@@ -258,11 +258,12 @@ serve(async (req) => {
       });
     }
 
-    return jsonResponse({
+    return cacheAndReturn({
       success: true,
       type: 'metadata_only',
       metadata: pageData.metadata,
       videoSources: [],
+    });
     });
 
   } catch (error) {
