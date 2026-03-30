@@ -236,7 +236,7 @@ serve(async (req) => {
     if (sourceCandidates.length > 0) {
       const verified = await verifyVideoSources(sourceCandidates, url);
       if (verified.length > 0) {
-        return jsonResponse({
+        return cacheAndReturn({
           success: true,
           type: verified.length === 1 ? 'direct' : 'picker',
           url: verified.length === 1 ? verified[0].url : undefined,
@@ -250,7 +250,7 @@ serve(async (req) => {
         });
       }
 
-      return jsonResponse({
+      return cacheAndReturn({
         success: true,
         type: 'metadata_only',
         metadata: pageData.metadata,
