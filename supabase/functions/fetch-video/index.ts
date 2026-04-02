@@ -151,6 +151,12 @@ serve(async (req) => {
     const cobaltResult = await tryCobaltMulti(url, pageData);
     if (cobaltResult) return cacheAndReturn(cobaltResult);
 
+    // Direct video URL (mp4, m3u8, etc.) — handle immediately
+    if (isDirectVideoUrl(url)) {
+      const directResult = await tryDirectVideoUrl(url, pageData);
+      if (directResult) return cacheAndReturn(directResult);
+    }
+
     // Platform-specific extractors
     if (isYouTube(url)) {
       const invResult = await tryInvidious(url, pageData);
@@ -172,6 +178,11 @@ serve(async (req) => {
     if (isInstagram(url)) {
       const igResult = await tryInstagram(url, pageData);
       if (igResult) return cacheAndReturn(igResult);
+    }
+
+    if (isFacebook(url)) {
+      const fbResult = await tryFacebook(url, pageData);
+      if (fbResult) return cacheAndReturn(fbResult);
     }
 
     if (isDailymotion(url)) {
@@ -222,6 +233,77 @@ serve(async (req) => {
     if (isAdultSite(url)) {
       const adultResult = await tryAdultSite(url, pageData);
       if (adultResult) return cacheAndReturn(adultResult);
+    }
+
+    // New platform extractors
+    if (isPinterest(url)) {
+      const pinResult = await tryPinterest(url, pageData);
+      if (pinResult) return cacheAndReturn(pinResult);
+    }
+
+    if (isLoom(url)) {
+      const loomResult = await tryLoom(url, pageData);
+      if (loomResult) return cacheAndReturn(loomResult);
+    }
+
+    if (isWistia(url)) {
+      const wistResult = await tryWistia(url, pageData);
+      if (wistResult) return cacheAndReturn(wistResult);
+    }
+
+    if (isBrightcove(url) || isJWPlayer(url)) {
+      const embedResult = await tryEmbedPlayer(url, pageData);
+      if (embedResult) return cacheAndReturn(embedResult);
+    }
+
+    if (isVidyard(url)) {
+      const vyResult = await tryVidyard(url, pageData);
+      if (vyResult) return cacheAndReturn(vyResult);
+    }
+
+    if (isBitchute(url)) {
+      const bcResult = await tryBitchute(url, pageData);
+      if (bcResult) return cacheAndReturn(bcResult);
+    }
+
+    if (isOdysee(url)) {
+      const odResult = await tryOdysee(url, pageData);
+      if (odResult) return cacheAndReturn(odResult);
+    }
+
+    if (isKick(url)) {
+      const kickResult = await tryKick(url, pageData);
+      if (kickResult) return cacheAndReturn(kickResult);
+    }
+
+    if (is9GAG(url)) {
+      const gagResult = await try9GAG(url, pageData);
+      if (gagResult) return cacheAndReturn(gagResult);
+    }
+
+    if (isImgur(url)) {
+      const imgResult = await tryImgur(url, pageData);
+      if (imgResult) return cacheAndReturn(imgResult);
+    }
+
+    if (isCoub(url)) {
+      const coubResult = await tryCoub(url, pageData);
+      if (coubResult) return cacheAndReturn(coubResult);
+    }
+
+    if (isVK(url)) {
+      const vkResult = await tryVK(url, pageData);
+      if (vkResult) return cacheAndReturn(vkResult);
+    }
+
+    if (isRutube(url)) {
+      const rtResult = await tryRutube(url, pageData);
+      if (rtResult) return cacheAndReturn(rtResult);
+    }
+
+    if (isPeerTube(url)) {
+      const ptResult = await tryPeerTube(url, pageData);
+      if (ptResult) return cacheAndReturn(ptResult);
     }
 
     // Deep iframe scraping for unknown sites
@@ -295,6 +377,23 @@ function isBilibili(url: string): boolean { return /(?:bilibili\.com|b23\.tv)/i.
 function isOKru(url: string): boolean { return /(?:ok\.ru|odnoklassniki\.ru)/i.test(url); }
 function is9anime(url: string): boolean { return /(?:9anime|gogoanime|aniwave|animesuge|zoro\.to|aniwatch|kaido\.to|animepahe)/i.test(url); }
 function isAdultSite(url: string): boolean { return /(?:xvideos|pornhub|xhamster|redtube|youporn|tube8|spankbang|xnxx|eporner|tnaflix|drtuber)/i.test(url); }
+function isFacebook(url: string): boolean { return /(?:facebook\.com|fb\.watch|fb\.com)\/(?:watch|reel|video|.*\/videos\/)/i.test(url); }
+function isPinterest(url: string): boolean { return /(?:pinterest\.com|pin\.it)/i.test(url); }
+function isLoom(url: string): boolean { return /loom\.com\/share\//i.test(url); }
+function isWistia(url: string): boolean { return /(?:wistia\.com|wistia\.net|wi\.st)/i.test(url); }
+function isBrightcove(url: string): boolean { return /(?:brightcove|bcove\.video|players\.brightcove)/i.test(url); }
+function isJWPlayer(url: string): boolean { return /(?:jwplatform\.com|jwplayer\.com|cdn\.jwplayer)/i.test(url); }
+function isVidyard(url: string): boolean { return /(?:vidyard\.com|share\.vidyard)/i.test(url); }
+function isPeerTube(url: string): boolean { return /\/w\/[a-zA-Z0-9-]+|\/videos\/watch\//i.test(url) && !/youtube|vimeo|dailymotion/i.test(url); }
+function isBitchute(url: string): boolean { return /bitchute\.com\/video\//i.test(url); }
+function isOdysee(url: string): boolean { return /(?:odysee\.com|lbry\.tv)/i.test(url); }
+function isKick(url: string): boolean { return /kick\.com/i.test(url); }
+function is9GAG(url: string): boolean { return /9gag\.com\/gag\//i.test(url); }
+function isImgur(url: string): boolean { return /imgur\.com\//i.test(url); }
+function isCoub(url: string): boolean { return /coub\.com\/view\//i.test(url); }
+function isVK(url: string): boolean { return /(?:vk\.com|vkvideo\.ru)/i.test(url); }
+function isRutube(url: string): boolean { return /rutube\.ru\/video\//i.test(url); }
+function isDirectVideoUrl(url: string): boolean { return /\.(?:mp4|webm|mov|m4v|avi|mkv|flv|m3u8|mpd|ts)(?:\?|$)/i.test(url); }
 
 function generateFilename(title: string, source: VideoSource): string {
   const safeName = (title || 'video').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().replace(/\s+/g, '_').slice(0, 80);
@@ -1522,6 +1621,504 @@ async function tryDeepIframeScrape(url: string, pageData: PageData): Promise<Rec
     }
   }
 
+  return null;
+}
+
+// ── Direct video URL handler ──
+
+async function tryDirectVideoUrl(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  try {
+    const headRes = await fetch(url, {
+      method: 'HEAD', redirect: 'follow',
+      headers: { 'User-Agent': USER_AGENTS[0] },
+      signal: AbortSignal.timeout(10000),
+    });
+    const ct = (headRes.headers.get('content-type') || '').toLowerCase();
+    const cl = headRes.headers.get('content-length');
+    if (headRes.ok && (ct.includes('video') || ct.includes('octet-stream') || ct.includes('mpegurl') || ct.includes('mp4'))) {
+      const format = guessFormat(ct, url);
+      const filename = url.split('/').pop()?.split('?')[0] || `video.${format}`;
+      return {
+        success: true, type: 'direct', url: headRes.url || url,
+        filename,
+        metadata: { ...pageData.metadata, title: filename, siteName: new URL(url).hostname },
+        videoSources: [{ url: headRes.url || url, quality: 'Direct', format, size: cl ? formatBytes(parseInt(cl)) : undefined }],
+      };
+    }
+  } catch (e) { console.log('Direct URL check failed:', e); }
+  return null;
+}
+
+// ── Facebook extraction ──
+
+async function tryFacebook(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  // Strategy 1: mbasic.facebook.com
+  try {
+    const mbasicUrl = url.replace(/(?:www|m)\.facebook\.com/i, 'mbasic.facebook.com');
+    const res = await fetch(mbasicUrl, {
+      headers: { 'User-Agent': USER_AGENTS[0], 'Accept': 'text/html' },
+      redirect: 'follow', signal: AbortSignal.timeout(12000),
+    });
+    if (res.ok) {
+      const html = await res.text();
+      const sources: VideoSource[] = [];
+      // Facebook embeds video URLs in specific JSON keys
+      const fbKeys = ['playable_url', 'playable_url_quality_hd', 'browser_native_sd_url', 'browser_native_hd_url', 'sd_src', 'hd_src', 'sd_src_no_ratelimit', 'hd_src_no_ratelimit'];
+      for (const key of fbKeys) {
+        const pat = new RegExp(`["']${key}["']\\s*:\\s*["']([^"']+)["']`, 'gi');
+        let m;
+        while ((m = pat.exec(html)) !== null) {
+          const vidUrl = normalizeExtractedUrl(m[1]);
+          if (vidUrl.startsWith('http')) {
+            const isHD = /hd/i.test(key);
+            sources.push({ url: vidUrl, quality: isHD ? 'HD' : 'SD', format: 'mp4', type: 'combined' });
+          }
+        }
+      }
+      sources.push(...extractVideoSources(html, mbasicUrl));
+      const meta = extractMetadata(html, url);
+      meta.siteName = 'Facebook';
+      const filtered = filterAdSources(mergeUniqueSources(sources));
+      if (filtered.length > 0) return buildPickerResult(filtered, meta);
+    }
+  } catch (e) { console.log('Facebook mbasic failed:', e); }
+
+  // Strategy 2: fb.watch redirect → get final URL and scrape
+  if (/fb\.watch/i.test(url)) {
+    try {
+      const res = await fetch(url, { redirect: 'follow', headers: { 'User-Agent': USER_AGENTS[0] }, signal: AbortSignal.timeout(10000) });
+      if (res.ok) {
+        const html = await res.text();
+        const sources = extractVideoSources(html, res.url);
+        const meta = extractMetadata(html, res.url);
+        meta.siteName = 'Facebook';
+        const filtered = filterAdSources(mergeUniqueSources(sources));
+        if (filtered.length > 0) return buildPickerResult(filtered, meta);
+      }
+    } catch {}
+  }
+
+  return null;
+}
+
+// ── Pinterest extraction ──
+
+async function tryPinterest(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENTS[0], 'Accept': 'text/html' },
+      redirect: 'follow', signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const sources: VideoSource[] = [];
+    // Pinterest embeds video in JSON data
+    const videoListRegex = /"video_list"\s*:\s*\{([^}]+(?:\{[^}]*\})*[^}]*)\}/g;
+    let m;
+    while ((m = videoListRegex.exec(html)) !== null) {
+      const urlMatch = /"url"\s*:\s*"(https?:\/\/[^"]+\.mp4[^"]*)"/gi;
+      let u;
+      while ((u = urlMatch.exec(m[0])) !== null) {
+        sources.push({ url: normalizeExtractedUrl(u[1]), quality: 'Direct', format: 'mp4', type: 'combined' });
+      }
+    }
+    // V2 format
+    const v2Regex = /"V_720P"\s*:\s*\{[^}]*"url"\s*:\s*"([^"]+)"/gi;
+    while ((m = v2Regex.exec(html)) !== null) sources.push({ url: normalizeExtractedUrl(m[1]), quality: '720p', format: 'mp4' });
+    const v2HlsRegex = /"V_HLSV4"\s*:\s*\{[^}]*"url"\s*:\s*"([^"]+)"/gi;
+    while ((m = v2HlsRegex.exec(html)) !== null) sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'HLS', format: 'hls' });
+    sources.push(...extractVideoSources(html, url));
+    const meta = extractMetadata(html, url);
+    meta.siteName = 'Pinterest';
+    const filtered = filterAdSources(mergeUniqueSources(sources));
+    if (filtered.length > 0) return buildPickerResult(filtered, meta);
+  } catch (e) { console.log('Pinterest extraction failed:', e); }
+  return null;
+}
+
+// ── Loom extraction ──
+
+async function tryLoom(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  const videoId = url.match(/loom\.com\/share\/([a-f0-9]+)/i)?.[1];
+  if (!videoId) return null;
+  try {
+    // Loom's transcoded URL endpoint
+    const res = await fetch(`https://www.loom.com/api/campaigns/sessions/${videoId}/transcoded-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': USER_AGENTS[0] },
+      body: JSON.stringify({}),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.url) {
+        return {
+          success: true, type: 'direct', url: data.url,
+          filename: generateFilename(pageData.metadata.title || 'loom-video', { url: data.url, format: 'mp4' }),
+          metadata: { ...pageData.metadata, siteName: 'Loom' },
+          videoSources: [{ url: data.url, quality: 'HD', format: 'mp4' }],
+        };
+      }
+    }
+  } catch {}
+  // Fallback: scrape page
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': USER_AGENTS[0] }, redirect: 'follow', signal: AbortSignal.timeout(10000) });
+    if (res.ok) {
+      const html = await res.text();
+      const sources = extractVideoSources(html, url);
+      const meta = extractMetadata(html, url);
+      meta.siteName = 'Loom';
+      if (sources.length > 0) return buildPickerResult(filterAdSources(mergeUniqueSources(sources)), meta);
+    }
+  } catch {}
+  return null;
+}
+
+// ── Wistia extraction ──
+
+async function tryWistia(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  const videoId = url.match(/(?:wistia\.com|wistia\.net|wi\.st)\/(?:medias|embed\/iframe)\/([a-zA-Z0-9]+)/i)?.[1];
+  if (!videoId) return null;
+  try {
+    const res = await fetch(`https://fast.wistia.com/embed/medias/${videoId}.json`, {
+      headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const media = data.media;
+      const sources: VideoSource[] = [];
+      if (media?.assets) {
+        for (const asset of media.assets) {
+          if (asset.url && /video|mp4|webm/i.test(asset.type || asset.contentType || '')) {
+            sources.push({ url: asset.url.startsWith('//') ? `https:${asset.url}` : asset.url, quality: asset.display_name || `${asset.width}x${asset.height}`, format: asset.ext || 'mp4', size: asset.size ? formatBytes(asset.size) : undefined });
+          }
+        }
+      }
+      const meta = { ...pageData.metadata, title: media?.name || pageData.metadata.title, thumbnail: media?.thumbnail?.url || pageData.metadata.thumbnail, duration: media?.duration?.toString(), siteName: 'Wistia' };
+      if (sources.length > 0) return buildPickerResult(sources, meta);
+    }
+  } catch (e) { console.log('Wistia extraction failed:', e); }
+  return null;
+}
+
+// ── Embed player extraction (Brightcove / JW Player) ──
+
+async function tryEmbedPlayer(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': USER_AGENTS[0], 'Accept': 'text/html' }, redirect: 'follow', signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const sources: VideoSource[] = [];
+    // Brightcove account/player patterns
+    const bcSourceRegex = /"sources"\s*:\s*\[([\s\S]*?)\]/g;
+    let m;
+    while ((m = bcSourceRegex.exec(html)) !== null) {
+      const srcUrl = /"src"\s*:\s*"(https?:\/\/[^"]+)"/gi;
+      let s;
+      while ((s = srcUrl.exec(m[1])) !== null) {
+        if (!isAdUrl(s[1])) sources.push({ url: normalizeExtractedUrl(s[1]), quality: 'Direct', format: guessFormat('', s[1]) });
+      }
+    }
+    // JW Player setup
+    const jwRegex = /jwplayer\([^)]*\)\.setup\((\{[\s\S]*?\})\)/g;
+    while ((m = jwRegex.exec(html)) !== null) {
+      const fileMatch = /"file"\s*:\s*"(https?:\/\/[^"]+)"/gi;
+      let f;
+      while ((f = fileMatch.exec(m[1])) !== null) {
+        sources.push({ url: normalizeExtractedUrl(f[1]), quality: 'Direct', format: guessFormat('', f[1]) });
+      }
+    }
+    sources.push(...extractVideoSources(html, url));
+    const meta = extractMetadata(html, url);
+    const filtered = filterAdSources(mergeUniqueSources(sources));
+    if (filtered.length > 0) return buildPickerResult(filtered, meta);
+  } catch (e) { console.log('Embed player extraction failed:', e); }
+  return null;
+}
+
+// ── Vidyard extraction ──
+
+async function tryVidyard(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  const videoId = url.match(/(?:vidyard\.com|share\.vidyard\.com)\/(?:watch\/)?([a-zA-Z0-9]+)/i)?.[1];
+  if (!videoId) return null;
+  try {
+    const res = await fetch(`https://play.vidyard.com/player/${videoId}.json`, {
+      headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const sources: VideoSource[] = [];
+      const chapters = data.payload?.chapters || data.payload?.vyContext?.chapterAttributes || [];
+      for (const ch of chapters) {
+        const versions = ch.video_files || [];
+        for (const v of versions) {
+          if (v.url) sources.push({ url: v.url, quality: v.profile || 'Direct', format: 'mp4' });
+        }
+      }
+      const meta = { ...pageData.metadata, title: data.payload?.vyContext?.name || pageData.metadata.title, siteName: 'Vidyard' };
+      if (sources.length > 0) return buildPickerResult(sources, meta);
+    }
+  } catch (e) { console.log('Vidyard extraction failed:', e); }
+  return null;
+}
+
+// ── Bitchute extraction ──
+
+async function tryBitchute(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': USER_AGENTS[0], 'Accept': 'text/html' }, redirect: 'follow', signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const sources: VideoSource[] = [];
+    // Bitchute uses <source> tags and sometimes JS-set URLs
+    const srcRegex = /["'](https?:\/\/[^"'\s]*(?:seed\d*\.bitchute\.com|bitchute)[^"'\s]*\.mp4[^"'\s]*)["']/gi;
+    let m;
+    while ((m = srcRegex.exec(html)) !== null) sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: 'mp4' });
+    sources.push(...extractVideoSources(html, url));
+    const meta = extractMetadata(html, url);
+    meta.siteName = 'Bitchute';
+    const filtered = filterAdSources(mergeUniqueSources(sources));
+    if (filtered.length > 0) return buildPickerResult(filtered, meta);
+  } catch (e) { console.log('Bitchute extraction failed:', e); }
+  return null;
+}
+
+// ── Odysee / LBRY extraction ──
+
+async function tryOdysee(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': USER_AGENTS[0], 'Accept': 'text/html' }, redirect: 'follow', signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const sources: VideoSource[] = [];
+    // Odysee embeds stream URLs in JSON
+    const streamRegex = /"streaming_url"\s*:\s*"(https?:\/\/[^"]+)"/gi;
+    let m;
+    while ((m = streamRegex.exec(html)) !== null) sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: guessFormat('', m[1]) });
+    // contentUrl in JSON-LD
+    sources.push(...extractVideoSources(html, url));
+    const meta = extractMetadata(html, url);
+    meta.siteName = 'Odysee';
+    const filtered = filterAdSources(mergeUniqueSources(sources));
+    if (filtered.length > 0) return buildPickerResult(filtered, meta);
+  } catch (e) { console.log('Odysee extraction failed:', e); }
+  return null;
+}
+
+// ── Kick extraction ──
+
+async function tryKick(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  // Kick clips
+  const clipMatch = url.match(/kick\.com\/[^/]+\/clips\/([^/?]+)/i) || url.match(/kick\.com\/[^/]+\?clip=([^&]+)/i);
+  if (clipMatch) {
+    try {
+      const res = await fetch(`https://kick.com/api/v2/clips/${clipMatch[1]}`, {
+        headers: { 'Accept': 'application/json', 'User-Agent': USER_AGENTS[0] },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const clip = data.clip || data;
+        if (clip.video_url || clip.clip_url) {
+          const vidUrl = clip.video_url || clip.clip_url;
+          return {
+            success: true, type: 'direct', url: vidUrl,
+            filename: generateFilename(clip.title || 'kick-clip', { url: vidUrl, format: 'mp4' }),
+            metadata: { ...pageData.metadata, title: clip.title || 'Kick Clip', thumbnail: clip.thumbnail_url || '', siteName: 'Kick', author: clip.channel?.slug || '' },
+            videoSources: [{ url: vidUrl, quality: 'HD', format: 'mp4' }],
+          };
+        }
+      }
+    } catch {}
+  }
+  // Fallback: scrape page
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': USER_AGENTS[0] }, redirect: 'follow', signal: AbortSignal.timeout(10000) });
+    if (res.ok) {
+      const html = await res.text();
+      const sources = extractVideoSources(html, url);
+      const meta = extractMetadata(html, url);
+      meta.siteName = 'Kick';
+      if (sources.length > 0) return buildPickerResult(filterAdSources(mergeUniqueSources(sources)), meta);
+    }
+  } catch {}
+  return null;
+}
+
+// ── 9GAG extraction ──
+
+async function try9GAG(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  const gagId = url.match(/9gag\.com\/gag\/([a-zA-Z0-9]+)/i)?.[1];
+  if (!gagId) return null;
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': USER_AGENTS[0], 'Accept': 'text/html' }, redirect: 'follow', signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const sources: VideoSource[] = [];
+    // 9GAG uses JSON data in page
+    const jsonMatch = html.match(/window\._config\s*=\s*JSON\.parse\("([\s\S]*?)"\)/);
+    if (jsonMatch) {
+      try {
+        const decoded = jsonMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+        const mp4Regex = /https?:\/\/[^"\\]+\.mp4[^"\\]*/gi;
+        let m;
+        while ((m = mp4Regex.exec(decoded)) !== null) sources.push({ url: normalizeExtractedUrl(m[0]), quality: 'Direct', format: 'mp4' });
+      } catch {}
+    }
+    sources.push(...extractVideoSources(html, url));
+    const meta = extractMetadata(html, url);
+    meta.siteName = '9GAG';
+    const filtered = filterAdSources(mergeUniqueSources(sources));
+    if (filtered.length > 0) return buildPickerResult(filtered, meta);
+  } catch (e) { console.log('9GAG extraction failed:', e); }
+  return null;
+}
+
+// ── Imgur extraction ──
+
+async function tryImgur(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  const imgurId = url.match(/imgur\.com\/(?:a\/)?([a-zA-Z0-9]+)/i)?.[1];
+  if (!imgurId) return null;
+  try {
+    // Try direct .mp4 URL
+    const mp4Url = `https://i.imgur.com/${imgurId}.mp4`;
+    const headRes = await fetch(mp4Url, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
+    if (headRes.ok && (headRes.headers.get('content-type') || '').includes('video')) {
+      const cl = headRes.headers.get('content-length');
+      return {
+        success: true, type: 'direct', url: mp4Url,
+        filename: `imgur_${imgurId}.mp4`,
+        metadata: { ...pageData.metadata, siteName: 'Imgur' },
+        videoSources: [{ url: mp4Url, quality: 'Direct', format: 'mp4', size: cl ? formatBytes(parseInt(cl)) : undefined }],
+      };
+    }
+  } catch {}
+  // Fallback: scrape page
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': USER_AGENTS[0] }, redirect: 'follow', signal: AbortSignal.timeout(10000) });
+    if (res.ok) {
+      const html = await res.text();
+      const sources = extractVideoSources(html, url);
+      const meta = extractMetadata(html, url);
+      meta.siteName = 'Imgur';
+      if (sources.length > 0) return buildPickerResult(filterAdSources(mergeUniqueSources(sources)), meta);
+    }
+  } catch {}
+  return null;
+}
+
+// ── Coub extraction ──
+
+async function tryCoub(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  const coubId = url.match(/coub\.com\/view\/([a-zA-Z0-9]+)/i)?.[1];
+  if (!coubId) return null;
+  try {
+    const res = await fetch(`https://coub.com/api/v2/coubs/${coubId}`, {
+      headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const sources: VideoSource[] = [];
+      const fv = data.file_versions?.html5?.video;
+      if (fv) {
+        if (fv.higher?.url) sources.push({ url: fv.higher.url, quality: 'High', format: 'mp4' });
+        if (fv.med?.url) sources.push({ url: fv.med.url, quality: 'Medium', format: 'mp4' });
+        if (fv.low?.url) sources.push({ url: fv.low.url, quality: 'Low', format: 'mp4' });
+      }
+      const meta = { ...pageData.metadata, title: data.title || 'Coub', thumbnail: data.picture || '', siteName: 'Coub', author: data.channel?.title || '' };
+      if (sources.length > 0) return buildPickerResult(sources, meta);
+    }
+  } catch (e) { console.log('Coub extraction failed:', e); }
+  return null;
+}
+
+// ── VK extraction ──
+
+async function tryVK(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': USER_AGENTS[0], 'Accept': 'text/html' }, redirect: 'follow', signal: AbortSignal.timeout(12000) });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const sources: VideoSource[] = [];
+    // VK video URLs in various JSON patterns
+    const vkUrlPatterns = [
+      /"url(\d+)"\s*:\s*"(https?:\/\/[^"]+)"/gi,
+      /"cache(\d+)"\s*:\s*"(https?:\/\/[^"]+)"/gi,
+      /"hls"\s*:\s*"(https?:\/\/[^"]+)"/gi,
+      /"dash_sep"\s*:\s*"(https?:\/\/[^"]+)"/gi,
+      /"live_mp4"\s*:\s*"(https?:\/\/[^"]+)"/gi,
+    ];
+    for (const pat of vkUrlPatterns) {
+      let m;
+      while ((m = pat.exec(html)) !== null) {
+        const vidUrl = normalizeExtractedUrl(m[m.length - 1]);
+        const quality = m.length === 3 ? `${m[1]}p` : 'Direct';
+        sources.push({ url: vidUrl, quality, format: guessFormat('', vidUrl) });
+      }
+    }
+    sources.push(...extractVideoSources(html, url));
+    const meta = extractMetadata(html, url);
+    meta.siteName = 'VK';
+    const filtered = filterAdSources(mergeUniqueSources(sources));
+    if (filtered.length > 0) return buildPickerResult(filtered, meta);
+  } catch (e) { console.log('VK extraction failed:', e); }
+  return null;
+}
+
+// ── Rutube extraction ──
+
+async function tryRutube(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  const videoId = url.match(/rutube\.ru\/video\/([a-f0-9]+)/i)?.[1];
+  if (!videoId) return null;
+  try {
+    const res = await fetch(`https://rutube.ru/api/play/options/${videoId}/?format=json`, {
+      headers: { 'Accept': 'application/json', 'User-Agent': USER_AGENTS[0] },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const sources: VideoSource[] = [];
+      if (data.video_balancer?.m3u8) sources.push({ url: data.video_balancer.m3u8, quality: 'Auto (HLS)', format: 'hls' });
+      if (data.video_balancer?.default) sources.push({ url: data.video_balancer.default, quality: 'Direct', format: 'mp4' });
+      const meta = { ...pageData.metadata, title: data.title || pageData.metadata.title, thumbnail: data.thumbnail_url || pageData.metadata.thumbnail, author: data.author?.name || '', duration: data.duration?.toString() || '', siteName: 'Rutube' };
+      if (sources.length > 0) return buildPickerResult(sources, meta);
+    }
+  } catch (e) { console.log('Rutube extraction failed:', e); }
+  return null;
+}
+
+// ── PeerTube extraction ──
+
+async function tryPeerTube(url: string, pageData: PageData): Promise<Record<string, unknown> | null> {
+  // PeerTube uses /api/v1/videos/{id} pattern
+  const videoMatch = url.match(/\/(?:w|videos\/watch)\/([a-zA-Z0-9-]+)/i);
+  if (!videoMatch) return null;
+  try {
+    const baseUrl = new URL(url).origin;
+    const res = await fetch(`${baseUrl}/api/v1/videos/${videoMatch[1]}`, {
+      headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const sources: VideoSource[] = [];
+      if (data.files) {
+        for (const f of data.files) {
+          if (f.fileUrl || f.fileDownloadUrl) sources.push({ url: f.fileUrl || f.fileDownloadUrl, quality: f.resolution?.label || 'Direct', format: 'mp4', size: f.size ? formatBytes(f.size) : undefined });
+        }
+      }
+      if (data.streamingPlaylists) {
+        for (const sp of data.streamingPlaylists) {
+          if (sp.playlistUrl) sources.push({ url: sp.playlistUrl, quality: 'Auto (HLS)', format: 'hls' });
+          for (const f of sp.files || []) {
+            if (f.fileUrl || f.fileDownloadUrl) sources.push({ url: f.fileUrl || f.fileDownloadUrl, quality: f.resolution?.label || 'Direct', format: 'mp4', size: f.size ? formatBytes(f.size) : undefined });
+          }
+        }
+      }
+      const meta = { ...pageData.metadata, title: data.name || pageData.metadata.title, thumbnail: data.previewPath ? `${baseUrl}${data.previewPath}` : pageData.metadata.thumbnail, author: data.account?.displayName || '', duration: data.duration?.toString() || '', siteName: 'PeerTube' };
+      if (sources.length > 0) return buildPickerResult(sources, meta);
+    }
+  } catch (e) { console.log('PeerTube extraction failed:', e); }
   return null;
 }
 
