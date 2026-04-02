@@ -1674,19 +1674,21 @@ async function tryJinaMirror(url: string): Promise<PageData | null> {
 // ── Metadata extraction ──
 
 function extractMetadata(html: string, url: string): Record<string, string> {
+  const $ = cheerio.load(html);
+
   const getMetaContent = (property: string): string => {
-    const r1 = new RegExp(`<meta[^>]*(?:property|name)=["']${property}["'][^>]*content=["']([^"']*)["']`, 'i');
-    const r2 = new RegExp(`<meta[^>]*content=["']([^"']*)["'][^>]*(?:property|name)=["']${property}["']`, 'i');
-    return (html.match(r1) || html.match(r2))?.[1] || '';
+    return $(`meta[property="${property}"]`).attr('content')
+      || $(`meta[name="${property}"]`).attr('content')
+      || '';
   };
 
-  const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+  const titleText = $('title').first().text().trim();
   const videoUrl = getMetaContent('og:video:url') || getMetaContent('og:video:secure_url') || getMetaContent('og:video') || '';
   const width = getMetaContent('og:video:width');
   const height = getMetaContent('og:video:height');
 
   return {
-    title: decodeHtmlEntities(getMetaContent('og:title') || titleMatch?.[1]?.trim() || 'Unknown'),
+    title: decodeHtmlEntities(getMetaContent('og:title') || titleText || 'Unknown'),
     description: decodeHtmlEntities(getMetaContent('og:description') || getMetaContent('description') || ''),
     thumbnail: normalizeExtractedUrl(getMetaContent('og:image') || ''),
     duration: getMetaContent('video:duration') || '',
