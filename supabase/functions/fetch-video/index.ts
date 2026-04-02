@@ -151,6 +151,12 @@ serve(async (req) => {
     const cobaltResult = await tryCobaltMulti(url, pageData);
     if (cobaltResult) return cacheAndReturn(cobaltResult);
 
+    // Direct video URL (mp4, m3u8, etc.) — handle immediately
+    if (isDirectVideoUrl(url)) {
+      const directResult = await tryDirectVideoUrl(url, pageData);
+      if (directResult) return cacheAndReturn(directResult);
+    }
+
     // Platform-specific extractors
     if (isYouTube(url)) {
       const invResult = await tryInvidious(url, pageData);
@@ -172,6 +178,11 @@ serve(async (req) => {
     if (isInstagram(url)) {
       const igResult = await tryInstagram(url, pageData);
       if (igResult) return cacheAndReturn(igResult);
+    }
+
+    if (isFacebook(url)) {
+      const fbResult = await tryFacebook(url, pageData);
+      if (fbResult) return cacheAndReturn(fbResult);
     }
 
     if (isDailymotion(url)) {
@@ -222,6 +233,77 @@ serve(async (req) => {
     if (isAdultSite(url)) {
       const adultResult = await tryAdultSite(url, pageData);
       if (adultResult) return cacheAndReturn(adultResult);
+    }
+
+    // New platform extractors
+    if (isPinterest(url)) {
+      const pinResult = await tryPinterest(url, pageData);
+      if (pinResult) return cacheAndReturn(pinResult);
+    }
+
+    if (isLoom(url)) {
+      const loomResult = await tryLoom(url, pageData);
+      if (loomResult) return cacheAndReturn(loomResult);
+    }
+
+    if (isWistia(url)) {
+      const wistResult = await tryWistia(url, pageData);
+      if (wistResult) return cacheAndReturn(wistResult);
+    }
+
+    if (isBrightcove(url) || isJWPlayer(url)) {
+      const embedResult = await tryEmbedPlayer(url, pageData);
+      if (embedResult) return cacheAndReturn(embedResult);
+    }
+
+    if (isVidyard(url)) {
+      const vyResult = await tryVidyard(url, pageData);
+      if (vyResult) return cacheAndReturn(vyResult);
+    }
+
+    if (isBitchute(url)) {
+      const bcResult = await tryBitchute(url, pageData);
+      if (bcResult) return cacheAndReturn(bcResult);
+    }
+
+    if (isOdysee(url)) {
+      const odResult = await tryOdysee(url, pageData);
+      if (odResult) return cacheAndReturn(odResult);
+    }
+
+    if (isKick(url)) {
+      const kickResult = await tryKick(url, pageData);
+      if (kickResult) return cacheAndReturn(kickResult);
+    }
+
+    if (is9GAG(url)) {
+      const gagResult = await try9GAG(url, pageData);
+      if (gagResult) return cacheAndReturn(gagResult);
+    }
+
+    if (isImgur(url)) {
+      const imgResult = await tryImgur(url, pageData);
+      if (imgResult) return cacheAndReturn(imgResult);
+    }
+
+    if (isCoub(url)) {
+      const coubResult = await tryCoub(url, pageData);
+      if (coubResult) return cacheAndReturn(coubResult);
+    }
+
+    if (isVK(url)) {
+      const vkResult = await tryVK(url, pageData);
+      if (vkResult) return cacheAndReturn(vkResult);
+    }
+
+    if (isRutube(url)) {
+      const rtResult = await tryRutube(url, pageData);
+      if (rtResult) return cacheAndReturn(rtResult);
+    }
+
+    if (isPeerTube(url)) {
+      const ptResult = await tryPeerTube(url, pageData);
+      if (ptResult) return cacheAndReturn(ptResult);
     }
 
     // Deep iframe scraping for unknown sites
