@@ -295,6 +295,23 @@ function isBilibili(url: string): boolean { return /(?:bilibili\.com|b23\.tv)/i.
 function isOKru(url: string): boolean { return /(?:ok\.ru|odnoklassniki\.ru)/i.test(url); }
 function is9anime(url: string): boolean { return /(?:9anime|gogoanime|aniwave|animesuge|zoro\.to|aniwatch|kaido\.to|animepahe)/i.test(url); }
 function isAdultSite(url: string): boolean { return /(?:xvideos|pornhub|xhamster|redtube|youporn|tube8|spankbang|xnxx|eporner|tnaflix|drtuber)/i.test(url); }
+function isFacebook(url: string): boolean { return /(?:facebook\.com|fb\.watch|fb\.com)\/(?:watch|reel|video|.*\/videos\/)/i.test(url); }
+function isPinterest(url: string): boolean { return /(?:pinterest\.com|pin\.it)/i.test(url); }
+function isLoom(url: string): boolean { return /loom\.com\/share\//i.test(url); }
+function isWistia(url: string): boolean { return /(?:wistia\.com|wistia\.net|wi\.st)/i.test(url); }
+function isBrightcove(url: string): boolean { return /(?:brightcove|bcove\.video|players\.brightcove)/i.test(url); }
+function isJWPlayer(url: string): boolean { return /(?:jwplatform\.com|jwplayer\.com|cdn\.jwplayer)/i.test(url); }
+function isVidyard(url: string): boolean { return /(?:vidyard\.com|share\.vidyard)/i.test(url); }
+function isPeerTube(url: string): boolean { return /\/w\/[a-zA-Z0-9-]+|\/videos\/watch\//i.test(url) && !/youtube|vimeo|dailymotion/i.test(url); }
+function isBitchute(url: string): boolean { return /bitchute\.com\/video\//i.test(url); }
+function isOdysee(url: string): boolean { return /(?:odysee\.com|lbry\.tv)/i.test(url); }
+function isKick(url: string): boolean { return /kick\.com/i.test(url); }
+function is9GAG(url: string): boolean { return /9gag\.com\/gag\//i.test(url); }
+function isImgur(url: string): boolean { return /imgur\.com\//i.test(url); }
+function isCoub(url: string): boolean { return /coub\.com\/view\//i.test(url); }
+function isVK(url: string): boolean { return /(?:vk\.com|vkvideo\.ru)/i.test(url); }
+function isRutube(url: string): boolean { return /rutube\.ru\/video\//i.test(url); }
+function isDirectVideoUrl(url: string): boolean { return /\.(?:mp4|webm|mov|m4v|avi|mkv|flv|m3u8|mpd|ts)(?:\?|$)/i.test(url); }
 
 function generateFilename(title: string, source: VideoSource): string {
   const safeName = (title || 'video').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().replace(/\s+/g, '_').slice(0, 80);
