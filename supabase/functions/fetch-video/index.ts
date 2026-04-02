@@ -1706,6 +1706,7 @@ function extractMetadata(html: string, url: string): Record<string, string> {
 function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
   const sources: VideoSource[] = [];
   const seenUrls = new Set<string>();
+  const $ = cheerio.load(html);
 
   const addSource = (rawUrl: string, quality?: string, format?: string) => {
     if (!rawUrl || rawUrl.startsWith('data:') || rawUrl.startsWith('blob:') || rawUrl.length < 10) return;
@@ -1718,49 +1719,38 @@ function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
     } catch {}
   };
 
-  let m;
-
-  // 1. <video> tag src + poster
-  const videoTagRegex = /<video[^>]*>/gi;
-  while ((m = videoTagRegex.exec(html)) !== null) {
-    const tag = m[0];
-    const srcMatch = tag.match(/\ssrc=["']([^"']+)["']/i);
-    if (srcMatch) addSource(srcMatch[1]);
-    const dataSrcMatch = tag.match(/\sdata-src=["']([^"']+)["']/i);
-    if (dataSrcMatch) addSource(dataSrcMatch[1]);
-    const dataVideoSrc = tag.match(/\sdata-video-src=["']([^"']+)["']/i);
-    if (dataVideoSrc) addSource(dataVideoSrc[1]);
-  }
+  // 1. <video> tags — src, data-src, data-video-src
+  $('video').each((_, el) => {
+    const $el = $(el);
+    const src = $el.attr('src');
+    if (src) addSource(src);
+    const dataSrc = $el.attr('data-src');
+    if (dataSrc) addSource(dataSrc);
+    const dataVideoSrc = $el.attr('data-video-src');
+    if (dataVideoSrc) addSource(dataVideoSrc);
+  });
 
   // 2. <source> tags
-  const sourceRegex = /<source[^>]*\ssrc=["']([^"']+)["'][^>]*(?:type=["']([^"']*)["'])?/gi;
-  while ((m = sourceRegex.exec(html)) !== null) {
-    const fmt = m[2]?.split('/')[1]?.split(';')[0];
-    addSource(m[1], undefined, fmt);
-  }
-  const sourceAlt = /<source[^>]*(?:type=["']([^"']*)["'])[^>]*\ssrc=["']([^"']+)["']/gi;
-  while ((m = sourceAlt.exec(html)) !== null) {
-    const fmt = m[1]?.split('/')[1]?.split(';')[0];
-    addSource(m[2], undefined, fmt);
-  }
+  $('source').each((_, el) => {
+    const $el = $(el);
+    const src = $el.attr('src');
+    const type = $el.attr('type');
+    const fmt = type?.split('/')[1]?.split(';')[0];
+    if (src) addSource(src, undefined, fmt);
+  });
 
-  // 3. OG video meta tags
-  const ogVideoRegex = /<meta[^>]*(?:property|name)=["']og:video(?::(?:url|secure_url))?["'][^>]*content=["']([^"']+)["']/gi;
-  while ((m = ogVideoRegex.exec(html)) !== null) addSource(m[1]);
-  const ogVideoAlt = /<meta[^>]*content=["']([^"']+)["'][^>]*(?:property|name)=["']og:video(?::(?:url|secure_url))?["']/gi;
-  while ((m = ogVideoAlt.exec(html)) !== null) addSource(m[1]);
+  // 3. OG video meta tags (cheerio)
+  $('meta[property="og:video"], meta[property="og:video:url"], meta[property="og:video:secure_url"]').each((_, el) => {
+    const content = $(el).attr('content');
+    if (content) addSource(content);
+  });
 
   // 4. Twitter player stream
-  const tw = html.match(/<meta[^>]*(?:property|name)=["']twitter:player:stream["'][^>]*content=["']([^"']+)["']/i);
-  if (tw) addSource(tw[1]);
+  const twStream = $('meta[name="twitter:player:stream"], meta[property="twitter:player:stream"]').attr('content');
+  if (twStream) addSource(twStream);
 
-  // 5. Direct video file URLs
-  const directLinkRegex = /["'](https?:\/\/[^"'\s<>]+\.(?:mp4|webm|mov|m4v|avi|mkv|flv|wmv|3gp|ogv)(?:\?[^"'\s<>]*)?)["']/gi;
-  while ((m = directLinkRegex.exec(html)) !== null) addSource(m[1]);
-
-  // 6. JSON-LD
-  const jsonLdRegex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
-  while ((m = jsonLdRegex.exec(html)) !== null) {
+  // 5. JSON-LD via cheerio
+  $('script[type="application/ld+json"]').each((_, el) => {
     try {
       const walkJsonLd = (obj: any) => {
         if (!obj || typeof obj !== 'object') return;
@@ -1771,11 +1761,35 @@ function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
         if (Array.isArray(obj)) obj.forEach(walkJsonLd);
         if (obj['@graph']) walkJsonLd(obj['@graph']);
       };
-      walkJsonLd(JSON.parse(m[1]));
+      walkJsonLd(JSON.parse($(el).html() || ''));
     } catch {}
-  }
+  });
 
-  // 7. JS variable patterns
+  // 6. <iframe> embeds via cheerio
+  $('iframe[src]').each((_, el) => {
+    const src = $(el).attr('src') || '';
+    if (/\.(mp4|webm|mov|m3u8)/.test(src) || /embed|player|video/i.test(src)) {
+      addSource(src);
+    }
+  });
+
+  // 7. data-* attributes with video URLs via cheerio
+  $('[data-video-url], [data-src], [data-url], [data-file], [data-media], [data-stream], [data-hd], [data-sd], [data-mobile]').each((_, el) => {
+    const $el = $(el);
+    for (const attr of ['data-video-url', 'data-src', 'data-url', 'data-file', 'data-media', 'data-stream', 'data-hd', 'data-sd', 'data-mobile']) {
+      const val = $el.attr(attr);
+      if (val && val.startsWith('http')) addSource(val);
+    }
+  });
+
+  // ── Regex-based extraction for JS-embedded URLs (cheerio can't parse JS) ──
+  let m;
+
+  // 8. Direct video file URLs in strings
+  const directLinkRegex = /["'](https?:\/\/[^"'\s<>]+\.(?:mp4|webm|mov|m4v|avi|mkv|flv|wmv|3gp|ogv)(?:\?[^"'\s<>]*)?)["']/gi;
+  while ((m = directLinkRegex.exec(html)) !== null) addSource(m[1]);
+
+  // 9. JS variable patterns
   const jsPatterns = [
     /["'](?:video[_-]?(?:url|src|file|path)|file[_-]?url|source[_-]?url|mp4[_-]?url|hls[_-]?url|dash[_-]?url|stream[_-]?url|download[_-]?url|media[_-]?url|content[_-]?url|playback[_-]?url)["']\s*[:=]\s*["'](https?:\/\/[^"']+)["']/gi,
     /(?:videoUrl|videoSrc|fileSrc|streamUrl|mp4Url|hlsUrl|downloadUrl|mediaUrl|contentUrl|playbackUrl|sourceUrl)\s*[:=]\s*["'](https?:\/\/[^"']+)["']/gi,
@@ -1785,24 +1799,11 @@ function extractVideoSources(html: string, pageUrl: string): VideoSource[] {
     while ((m = pat.exec(html)) !== null) addSource(m[1]);
   }
 
-  // 8. HLS / DASH streams
+  // 10. HLS / DASH streams
   const hlsRegex = /["'](https?:\/\/[^"'\s<>]+\.m3u8(?:\?[^"'\s<>]*)?)["']/gi;
   while ((m = hlsRegex.exec(html)) !== null) addSource(m[1], undefined, 'hls');
   const dashRegex = /["'](https?:\/\/[^"'\s<>]+\.mpd(?:\?[^"'\s<>]*)?)["']/gi;
   while ((m = dashRegex.exec(html)) !== null) addSource(m[1], undefined, 'dash');
-
-  // 9. <iframe> embeds
-  const iframeRegex = /<iframe[^>]*\ssrc=["']([^"']+)["']/gi;
-  while ((m = iframeRegex.exec(html)) !== null) {
-    const iframeSrc = m[1];
-    if (/\.(mp4|webm|mov|m3u8)/.test(iframeSrc) || /embed|player|video/i.test(iframeSrc)) {
-      addSource(iframeSrc);
-    }
-  }
-
-  // 10. data-* attributes with video URLs
-  const dataAttrRegex = /data-(?:video|src|url|file|media|stream|hd|sd|mobile)[_-]?(?:url|src|file|href)?=["'](https?:\/\/[^"']+)["']/gi;
-  while ((m = dataAttrRegex.exec(html)) !== null) addSource(m[1]);
 
   // 11. SSR data blobs
   const ssrBlobRegex = /(?:window\.__[A-Z_]+__|window\.\w+Data|window\.initialProps)\s*=\s*(\{[\s\S]*?\});?\s*(?:<\/script>|\n)/gi;
