@@ -168,8 +168,21 @@ const Index = () => {
           </div>
         )}
 
+        {/* Paywall Bypass Highlight */}
+        <div className="w-full max-w-5xl mt-10 md:mt-16">
+          <div className="glass rounded-2xl p-5 md:p-8 border border-primary/20 bg-primary/5 flex flex-col md:flex-row items-center gap-4 md:gap-8">
+            <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
+              <Unlock className="h-7 w-7 text-primary" />
+            </div>
+            <div className="text-center md:text-left">
+              <h3 className="text-lg md:text-xl font-bold mb-1">Bypass Paywalls & Premium Content</h3>
+              <p className="text-sm text-muted-foreground">Access videos from subscription-based and premium platforms using direct video URLs. No login needed — just paste the link and download.</p>
+            </div>
+          </div>
+        </div>
+
         {/* Features */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-5 mt-10 md:mt-16 w-full max-w-5xl">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-5 mt-8 md:mt-12 w-full max-w-5xl">
           {[
             { icon: Download, title: 'Multi-Platform', desc: 'YouTube, TikTok, Instagram, Twitter, Reddit, Vimeo and 1000+ more sites.' },
             { icon: Zap, title: 'Lightning Fast', desc: 'Powered by open-source tools. No watermarks, no limits, no ads.' },
