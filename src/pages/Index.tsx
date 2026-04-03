@@ -163,7 +163,7 @@ const Index = () => {
           <div className="w-full max-w-2xl mx-auto mt-6 space-y-2">
             <Progress value={progress} className="h-2 bg-secondary/50" />
             <p className="text-xs text-center text-muted-foreground font-mono animate-pulse">
-              Fetching video data...
+              {loadingMsg}
             </p>
           </div>
         )}
