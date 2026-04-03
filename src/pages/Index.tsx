@@ -1,10 +1,25 @@
-import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Download, Zap, Users, Shield, Globe, Video, Headphones, MonitorPlay, Smartphone, Heart, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Download, Zap, Users, Shield, Globe, Headphones, MonitorPlay, Smartphone, Heart, ArrowRight, CheckCircle2, Lock, Unlock } from 'lucide-react';
 import UrlInput from '@/components/UrlInput';
 import { Progress } from '@/components/ui/progress';
 import { fetchVideo, type VideoResult } from '@/lib/api/video';
 import { useToast } from '@/hooks/use-toast';
+
+const LOADING_MESSAGES = [
+  '🤖 Our AI is processing your request...',
+  '☕ Grab a coffee while we work on it...',
+  '⚡ Almost there, hang tight...',
+  '🔍 Scanning video sources...',
+  '🎬 Extracting the good stuff...',
+  '🧠 AI is doing its magic...',
+  '📡 Connecting to the source...',
+  '🚀 Nearly done, trust me...',
+  '🎯 Locking onto the video stream...',
+  '🔓 Bypassing restrictions...',
+  '💾 Preparing download options...',
+  '⏳ Just a few more seconds...',
+];
 
 const PLATFORMS = [
   'YouTube', 'TikTok', 'Instagram', 'Twitter/X', 'Facebook', 'Reddit',
@@ -25,16 +40,25 @@ const Index = () => {
   const [result, setResult] = useState<VideoResult | null>(null);
   const [fetchError, setFetchError] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [loadingMsg, setLoadingMsg] = useState(LOADING_MESSAGES[0]);
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!isLoading) return;
+    const pick = () => setLoadingMsg(LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)]);
+    pick();
+    const id = setInterval(pick, 2500);
+    return () => clearInterval(id);
+  }, [isLoading]);
 
   const downloadCount = useMemo(() => {
     const launchDate = new Date('2026-01-01');
     const now = new Date();
     const daysSinceLaunch = Math.max(0, Math.floor((now.getTime() - launchDate.getTime()) / 86400000));
-    let total = 12847;
+    let total = 4200;
     for (let d = 0; d <= daysSinceLaunch; d++) {
-      total += 70 + ((d * 7 + 13) % 31);
+      total += 8 + ((d * 3 + 7) % 12);
     }
     return total;
   }, []);
@@ -83,14 +107,10 @@ const Index = () => {
 
       <div className="relative z-10 flex flex-col items-center px-4 py-8 md:py-16">
         {/* Header bar - desktop only */}
-        <div className="w-full max-w-5xl hidden md:flex justify-between items-center mb-12">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-primary/20 flex items-center justify-center">
-              <Video className="h-4 w-4 text-primary" />
-            </div>
-            <span className="font-semibold text-foreground">Incognito Zone</span>
-          </div>
+        <div className="w-full max-w-5xl hidden md:flex justify-end items-center mb-12">
           <div className="flex items-center gap-4">
+            <Link to="/privacy" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Privacy</Link>
+            <Link to="/terms" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Terms</Link>
             <div className="flex items-center gap-1.5 glass rounded-full px-3 py-1">
               <Users className="h-3.5 w-3.5 text-primary" />
               <span className="text-xs font-mono font-semibold text-foreground">{downloadCount.toLocaleString()}</span>
@@ -143,13 +163,26 @@ const Index = () => {
           <div className="w-full max-w-2xl mx-auto mt-6 space-y-2">
             <Progress value={progress} className="h-2 bg-secondary/50" />
             <p className="text-xs text-center text-muted-foreground font-mono animate-pulse">
-              Fetching video data...
+              {loadingMsg}
             </p>
           </div>
         )}
 
+        {/* Paywall Bypass Highlight */}
+        <div className="w-full max-w-5xl mt-10 md:mt-16">
+          <div className="glass rounded-2xl p-5 md:p-8 border border-primary/20 bg-primary/5 flex flex-col md:flex-row items-center gap-4 md:gap-8">
+            <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
+              <Unlock className="h-7 w-7 text-primary" />
+            </div>
+            <div className="text-center md:text-left">
+              <h3 className="text-lg md:text-xl font-bold mb-1">Bypass Paywalls & Premium Content</h3>
+              <p className="text-sm text-muted-foreground">Access videos from subscription-based and premium platforms using direct video URLs. No login needed — just paste the link and download.</p>
+            </div>
+          </div>
+        </div>
+
         {/* Features */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-5 mt-10 md:mt-16 w-full max-w-5xl">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-5 mt-8 md:mt-12 w-full max-w-5xl">
           {[
             { icon: Download, title: 'Multi-Platform', desc: 'YouTube, TikTok, Instagram, Twitter, Reddit, Vimeo and 1000+ more sites.' },
             { icon: Zap, title: 'Lightning Fast', desc: 'Powered by open-source tools. No watermarks, no limits, no ads.' },
@@ -220,7 +253,7 @@ const Index = () => {
               { q: 'Is this really free?', a: 'Yes, 100% free with no hidden fees, no premium tiers, and no limits.' },
               { q: 'Do you store my downloaded videos?', a: 'No. We never store your videos or browsing data. Everything is processed in real-time.' },
               { q: 'What video qualities are supported?', a: 'We support up to 4K resolution depending on the source platform. Audio-only extraction is also available.' },
-              { q: 'Is this open source?', a: 'Yes! The entire codebase is open source and available on GitHub.' },
+              { q: 'Can I download premium/paid videos?', a: 'Yes — if you have a direct video URL from a premium platform, our tool can process and extract it for download.' },
             ].map((faq, i) => (
               <div key={i} className="glass rounded-xl p-4 space-y-2">
                 <h3 className="font-medium text-sm flex items-center gap-2">
@@ -237,13 +270,13 @@ const Index = () => {
         <footer className="mt-12 md:mt-20 w-full max-w-5xl">
           <div className="border-t border-border pt-6 md:pt-8">
             <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Video className="h-4 w-4 text-primary" />
-                <span className="text-sm font-medium text-foreground">Incognito Zone</span>
-              </div>
               <p className="text-xs text-muted-foreground flex items-center gap-1">
                 Made with <Heart className="h-3 w-3 text-destructive" /> by the community
               </p>
+              <div className="flex items-center gap-4">
+                <Link to="/privacy" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Privacy Policy</Link>
+                <Link to="/terms" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Terms of Service</Link>
+              </div>
               <p className="text-xs text-muted-foreground">
                 © 2026 Incognito Zone. All rights reserved.
               </p>
