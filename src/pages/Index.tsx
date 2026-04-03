@@ -1,10 +1,25 @@
-import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Download, Zap, Users, Shield, Globe, Video, Headphones, MonitorPlay, Smartphone, Heart, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Download, Zap, Users, Shield, Globe, Headphones, MonitorPlay, Smartphone, Heart, ArrowRight, CheckCircle2, Lock, Unlock } from 'lucide-react';
 import UrlInput from '@/components/UrlInput';
 import { Progress } from '@/components/ui/progress';
 import { fetchVideo, type VideoResult } from '@/lib/api/video';
 import { useToast } from '@/hooks/use-toast';
+
+const LOADING_MESSAGES = [
+  '🤖 Our AI is processing your request...',
+  '☕ Grab a coffee while we work on it...',
+  '⚡ Almost there, hang tight...',
+  '🔍 Scanning video sources...',
+  '🎬 Extracting the good stuff...',
+  '🧠 AI is doing its magic...',
+  '📡 Connecting to the source...',
+  '🚀 Nearly done, trust me...',
+  '🎯 Locking onto the video stream...',
+  '🔓 Bypassing restrictions...',
+  '💾 Preparing download options...',
+  '⏳ Just a few more seconds...',
+];
 
 const PLATFORMS = [
   'YouTube', 'TikTok', 'Instagram', 'Twitter/X', 'Facebook', 'Reddit',
