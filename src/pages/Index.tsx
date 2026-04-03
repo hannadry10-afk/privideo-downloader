@@ -107,14 +107,10 @@ const Index = () => {
 
       <div className="relative z-10 flex flex-col items-center px-4 py-8 md:py-16">
         {/* Header bar - desktop only */}
-        <div className="w-full max-w-5xl hidden md:flex justify-between items-center mb-12">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-primary/20 flex items-center justify-center">
-              <Video className="h-4 w-4 text-primary" />
-            </div>
-            <span className="font-semibold text-foreground">Incognito Zone</span>
-          </div>
+        <div className="w-full max-w-5xl hidden md:flex justify-end items-center mb-12">
           <div className="flex items-center gap-4">
+            <Link to="/privacy" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Privacy</Link>
+            <Link to="/terms" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Terms</Link>
             <div className="flex items-center gap-1.5 glass rounded-full px-3 py-1">
               <Users className="h-3.5 w-3.5 text-primary" />
               <span className="text-xs font-mono font-semibold text-foreground">{downloadCount.toLocaleString()}</span>
