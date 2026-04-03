@@ -253,7 +253,7 @@ const Index = () => {
               { q: 'Is this really free?', a: 'Yes, 100% free with no hidden fees, no premium tiers, and no limits.' },
               { q: 'Do you store my downloaded videos?', a: 'No. We never store your videos or browsing data. Everything is processed in real-time.' },
               { q: 'What video qualities are supported?', a: 'We support up to 4K resolution depending on the source platform. Audio-only extraction is also available.' },
-              { q: 'Is this open source?', a: 'Yes! The entire codebase is open source and available on GitHub.' },
+              { q: 'Can I download premium/paid videos?', a: 'Yes — if you have a direct video URL from a premium platform, our tool can process and extract it for download.' },
             ].map((faq, i) => (
               <div key={i} className="glass rounded-xl p-4 space-y-2">
                 <h3 className="font-medium text-sm flex items-center gap-2">
