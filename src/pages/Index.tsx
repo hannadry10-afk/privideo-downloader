@@ -40,16 +40,25 @@ const Index = () => {
   const [result, setResult] = useState<VideoResult | null>(null);
   const [fetchError, setFetchError] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [loadingMsg, setLoadingMsg] = useState(LOADING_MESSAGES[0]);
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!isLoading) return;
+    const pick = () => setLoadingMsg(LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)]);
+    pick();
+    const id = setInterval(pick, 2500);
+    return () => clearInterval(id);
+  }, [isLoading]);
 
   const downloadCount = useMemo(() => {
     const launchDate = new Date('2026-01-01');
     const now = new Date();
     const daysSinceLaunch = Math.max(0, Math.floor((now.getTime() - launchDate.getTime()) / 86400000));
-    let total = 12847;
+    let total = 4200;
     for (let d = 0; d <= daysSinceLaunch; d++) {
-      total += 70 + ((d * 7 + 13) % 31);
+      total += 8 + ((d * 3 + 7) % 12);
     }
     return total;
   }, []);
