@@ -91,10 +91,6 @@ const Index = () => {
             <span className="font-semibold text-foreground">Incognito Zone</span>
           </div>
           <div className="flex items-center gap-4">
-            <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground text-sm transition-colors">
-              <Github className="h-4 w-4" />
-              GitHub
-            </a>
             <div className="flex items-center gap-1.5 glass rounded-full px-3 py-1">
               <Users className="h-3.5 w-3.5 text-primary" />
               <span className="text-xs font-mono font-semibold text-foreground">{downloadCount.toLocaleString()}</span>
