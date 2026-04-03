@@ -270,13 +270,13 @@ const Index = () => {
         <footer className="mt-12 md:mt-20 w-full max-w-5xl">
           <div className="border-t border-border pt-6 md:pt-8">
             <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Video className="h-4 w-4 text-primary" />
-                <span className="text-sm font-medium text-foreground">Incognito Zone</span>
-              </div>
               <p className="text-xs text-muted-foreground flex items-center gap-1">
                 Made with <Heart className="h-3 w-3 text-destructive" /> by the community
               </p>
+              <div className="flex items-center gap-4">
+                <Link to="/privacy" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Privacy Policy</Link>
+                <Link to="/terms" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Terms of Service</Link>
+              </div>
               <p className="text-xs text-muted-foreground">
                 © 2026 Incognito Zone. All rights reserved.
               </p>
