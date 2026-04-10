@@ -30,10 +30,10 @@ function setCache(url: string, data: unknown) {
   resultCache.set(url, { data, timestamp: Date.now() });
 }
 
-// ── Rate limiter (per IP, in-memory) ──
+// ── Layer 1: Rate limiter (per IP, sliding window) ──
 const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-const RATE_LIMIT_MAX = 15; // 15 requests per minute per IP
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_MAX = 15;
 
 function isRateLimited(ip: string): boolean {
   const now = Date.now();
@@ -47,26 +47,162 @@ function isRateLimited(ip: string): boolean {
   return false;
 }
 
+// ── Layer 2: Burst / DDoS detection (short window) ──
+const burstMap = new Map<string, { count: number; start: number }>();
+const BURST_WINDOW_MS = 5_000; // 5 seconds
+const BURST_MAX = 5; // max 5 requests in 5s
+
+function isBurst(ip: string): boolean {
+  const now = Date.now();
+  const entry = burstMap.get(ip);
+  if (!entry || now - entry.start > BURST_WINDOW_MS) {
+    burstMap.set(ip, { count: 1, start: now });
+    return false;
+  }
+  entry.count++;
+  return entry.count > BURST_MAX;
+}
+
+// ── Layer 3: Progressive ban (repeat offenders) ──
+const banMap = new Map<string, { strikes: number; bannedUntil: number }>();
+
+function checkBan(ip: string): boolean {
+  const ban = banMap.get(ip);
+  if (!ban) return false;
+  if (Date.now() < ban.bannedUntil) return true;
+  // Ban expired, reset
+  banMap.delete(ip);
+  return false;
+}
+
+function recordStrike(ip: string) {
+  const ban = banMap.get(ip) || { strikes: 0, bannedUntil: 0 };
+  ban.strikes++;
+  // Exponential backoff: 1min, 5min, 30min, 2hr
+  const durations = [60_000, 300_000, 1_800_000, 7_200_000];
+  const idx = Math.min(ban.strikes - 1, durations.length - 1);
+  ban.bannedUntil = Date.now() + durations[idx];
+  banMap.set(ip, ban);
+}
+
+// ── Layer 4: SSRF protection ──
+const BLOCKED_HOSTS = [
+  /^localhost$/i, /^127\.\d+\.\d+\.\d+$/, /^10\.\d+\.\d+\.\d+$/,
+  /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/, /^192\.168\.\d+\.\d+$/,
+  /^0\.0\.0\.0$/, /^\[::1?\]$/, /^169\.254\.\d+\.\d+$/,
+  /\.local$/i, /\.internal$/i, /\.corp$/i,
+  /metadata\.google\.internal/i, /169\.254\.169\.254/,
+];
+const ALLOWED_PROTOCOLS = ['http:', 'https:'];
+
+function validateUrl(raw: string): { valid: boolean; url?: URL; error?: string } {
+  // Length check
+  if (!raw || typeof raw !== 'string' || raw.length > 2048) {
+    return { valid: false, error: 'Invalid or too-long URL' };
+  }
+  let parsed: URL;
+  try { parsed = new URL(raw); } catch { return { valid: false, error: 'Malformed URL' }; }
+  if (!ALLOWED_PROTOCOLS.includes(parsed.protocol)) {
+    return { valid: false, error: 'Only HTTP/HTTPS URLs are allowed' };
+  }
+  const host = parsed.hostname;
+  for (const pattern of BLOCKED_HOSTS) {
+    if (pattern.test(host)) return { valid: false, error: 'Access to internal resources is forbidden' };
+  }
+  return { valid: true, url: parsed };
+}
+
+// ── Layer 5: Input sanitisation ──
+function sanitizeInput(body: unknown): { url?: string; error?: string } {
+  if (!body || typeof body !== 'object') return { error: 'Invalid request body' };
+  const b = body as Record<string, unknown>;
+  if (typeof b.url !== 'string') return { error: 'URL must be a string' };
+  // Strip control chars & trim
+  const cleaned = b.url.replace(/[\x00-\x1f\x7f]/g, '').trim();
+  if (!cleaned) return { error: 'URL is required' };
+  return { url: cleaned };
+}
+
+// ── Periodic cleanup ──
+let lastCleanup = Date.now();
+function periodicCleanup() {
+  const now = Date.now();
+  if (now - lastCleanup < 120_000) return; // every 2 min
+  lastCleanup = now;
+  for (const [k, v] of rateLimitMap) { if (now - v.windowStart > RATE_LIMIT_WINDOW_MS * 2) rateLimitMap.delete(k); }
+  for (const [k, v] of burstMap) { if (now - v.start > BURST_WINDOW_MS * 2) burstMap.delete(k); }
+  for (const [k, v] of banMap) { if (now > v.bannedUntil) banMap.delete(k); }
+  if (resultCache.size > 500) {
+    for (const [k, v] of resultCache) { if (now - v.timestamp > CACHE_TTL_MS) resultCache.delete(k); }
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Only allow POST
+  if (req.method !== 'POST') {
+    return jsonResponse({ success: false, error: 'Method not allowed' }, 405);
+  }
+
+  periodicCleanup();
+
   try {
-    // Rate limiting
+    // Layer 1 & 2: Rate limiting + burst detection
     const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
       || req.headers.get('cf-connecting-ip')
       || 'unknown';
+
+    // Check ban first
+    if (checkBan(clientIp)) {
+      return jsonResponse({ success: false, error: 'Temporarily blocked due to excessive requests.' }, 429);
+    }
+
+    if (isBurst(clientIp)) {
+      recordStrike(clientIp);
+      return jsonResponse({ success: false, error: 'Too many requests. Slow down.' }, 429);
+    }
+
     if (isRateLimited(clientIp)) {
+      recordStrike(clientIp);
       return jsonResponse({ success: false, error: 'Rate limit exceeded. Please wait a moment before trying again.' }, 429);
     }
 
-    const { url } = await req.json();
-    if (!url) {
-      return jsonResponse({ success: false, error: 'URL is required' }, 400);
+    // Layer 3: Content-type validation
+    const ct = req.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      return jsonResponse({ success: false, error: 'Content-Type must be application/json' }, 415);
     }
 
-    console.log('Processing video URL:', url);
+    // Layer 4: Body size guard (reject > 10KB)
+    const contentLength = parseInt(req.headers.get('content-length') || '0', 10);
+    if (contentLength > 10240) {
+      return jsonResponse({ success: false, error: 'Request body too large' }, 413);
+    }
+
+    // Layer 5: Parse & sanitize input
+    let body: unknown;
+    try { body = await req.json(); } catch { return jsonResponse({ success: false, error: 'Invalid JSON' }, 400); }
+
+    const input = sanitizeInput(body);
+    if (input.error || !input.url) {
+      return jsonResponse({ success: false, error: input.error || 'URL is required' }, 400);
+    }
+
+    // Layer 4 continued: SSRF protection
+    const urlCheck = validateUrl(input.url);
+    if (!urlCheck.valid) {
+      return jsonResponse({ success: false, error: urlCheck.error }, 400);
+    }
+
+    const url = input.url;
+
+    // Sanitized log (no query params)
+    const logUrl = urlCheck.url ? `${urlCheck.url.hostname}${urlCheck.url.pathname}` : 'unknown';
+    console.log('Processing:', logUrl);
+
 
     // Check in-memory cache first
     const cached = getCached(url);
