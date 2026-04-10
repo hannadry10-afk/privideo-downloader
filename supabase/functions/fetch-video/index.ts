@@ -309,6 +309,18 @@ serve(async (req) => {
             format: sources[0]?.format || 'mp4',
             size: sources[0]?.size || '',
           }).then(() => {}).catch(() => {});
+
+          // Track site visit
+          const parsedUrl = new URL(url);
+          const siteName = parsedUrl.hostname.replace(/^www\./, '');
+          sb.from('site_visits').select('id, visit_count').eq('site_name', siteName).maybeSingle()
+            .then(({ data: existing }) => {
+              if (existing) {
+                sb.from('site_visits').update({ visit_count: existing.visit_count + 1, last_visited_at: new Date().toISOString() }).eq('id', existing.id).then(() => {}).catch(() => {});
+              } else {
+                sb.from('site_visits').insert({ site_name: siteName, url, visit_count: 1 }).then(() => {}).catch(() => {});
+              }
+            }).catch(() => {});
         } catch {}
       }
       return jsonResponse(result);
