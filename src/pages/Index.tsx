@@ -182,13 +182,11 @@ const Index = () => {
         </div>
 
         {/* Features */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-5 mt-8 md:mt-12 w-full max-w-5xl">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-5 mt-8 md:mt-12 w-full max-w-5xl">
           {[
             { icon: Download, title: 'Multi-Platform', desc: 'YouTube, TikTok, Instagram, Twitter, Reddit, Vimeo and 1000+ more sites.' },
             { icon: Zap, title: 'Lightning Fast', desc: 'Powered by open-source tools. No watermarks, no limits, no ads.' },
-            { icon: MonitorPlay, title: 'Quality Options', desc: 'Choose resolution up to 4K, format, and download audio-only tracks.' },
             { icon: Shield, title: 'Private & Secure', desc: 'No tracking, no cookies, no data stored. Your downloads stay private.' },
-            { icon: Headphones, title: 'Audio Extraction', desc: 'Extract audio from any video in MP3 format for offline listening.' },
             { icon: Smartphone, title: 'Works Everywhere', desc: 'Fully responsive. Works perfectly on desktop, tablet, and mobile.' },
           ].map((f, i) => (
             <div
