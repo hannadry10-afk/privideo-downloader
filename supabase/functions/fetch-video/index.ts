@@ -203,7 +203,6 @@ serve(async (req) => {
     const logUrl = urlCheck.url ? `${urlCheck.url.hostname}${urlCheck.url.pathname}` : 'unknown';
     console.log('Processing:', logUrl);
 
-    console.log('Processing video URL:', url);
 
     // Check in-memory cache first
     const cached = getCached(url);
