@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Download, Zap, Users, Shield, Globe, Headphones, MonitorPlay, Smartphone, Heart, ArrowRight, CheckCircle2, Lock, Unlock } from 'lucide-react';
+import { Download, Zap, Users, Shield, Globe, Smartphone, Heart, ArrowRight, CheckCircle2, Unlock } from 'lucide-react';
 import UrlInput from '@/components/UrlInput';
 import { Progress } from '@/components/ui/progress';
 import { fetchVideo, type VideoResult } from '@/lib/api/video';
