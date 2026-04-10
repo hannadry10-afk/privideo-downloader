@@ -11,7 +11,6 @@ const WatchPage = () => {
 
   useEffect(() => {
     if (!result || !result.success) {
-      // Gracefully redirect to home instead of showing 404
       navigate('/', { replace: true });
     }
   }, [result, navigate]);

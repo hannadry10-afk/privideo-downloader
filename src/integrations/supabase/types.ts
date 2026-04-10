@@ -14,33 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      site_visits: {
-        Row: {
-          created_at: string
-          id: string
-          last_visited_at: string
-          site_name: string
-          url: string
-          visit_count: number
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          last_visited_at?: string
-          site_name: string
-          url: string
-          visit_count?: number
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          last_visited_at?: string
-          site_name?: string
-          url?: string
-          visit_count?: number
-        }
-        Relationships: []
-      }
       videos: {
         Row: {
           author: string | null
