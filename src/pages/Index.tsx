@@ -1,10 +1,11 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Download, Zap, Users, Shield, Globe, Smartphone, Heart, ArrowRight, CheckCircle2, Unlock } from 'lucide-react';
+import { Download, Zap, Shield, Smartphone, Heart, CheckCircle2, Unlock } from 'lucide-react';
 import UrlInput from '@/components/UrlInput';
 import { Progress } from '@/components/ui/progress';
 import { fetchVideo, type VideoResult } from '@/lib/api/video';
 import { useToast } from '@/hooks/use-toast';
+import SiteVisitTracker from '@/components/SiteVisitTracker';
 
 const LOADING_MESSAGES = [
   '🤖 Our AI is processing your request...',
@@ -35,6 +36,16 @@ const STATS = [
   { label: 'Price', value: 'Free' },
 ];
 
+// Track page visit on load
+const trackPageVisit = async () => {
+  try {
+    const { supabase } = await import('@/integrations/supabase/client');
+    await supabase.functions.invoke('fetch-video', {
+      body: { trackVisit: true, siteName: window.location.hostname },
+    }).catch(() => {});
+  } catch {}
+};
+
 const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<VideoResult | null>(null);
@@ -45,23 +56,16 @@ const Index = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    trackPageVisit();
+  }, []);
+
+  useEffect(() => {
     if (!isLoading) return;
     const pick = () => setLoadingMsg(LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)]);
     pick();
     const id = setInterval(pick, 2500);
     return () => clearInterval(id);
   }, [isLoading]);
-
-  const downloadCount = useMemo(() => {
-    const launchDate = new Date('2026-01-01');
-    const now = new Date();
-    const daysSinceLaunch = Math.max(0, Math.floor((now.getTime() - launchDate.getTime()) / 86400000));
-    let total = 4200;
-    for (let d = 0; d <= daysSinceLaunch; d++) {
-      total += 8 + ((d * 3 + 7) % 12);
-    }
-    return total;
-  }, []);
 
   const handleFetch = async (url: string) => {
     setIsLoading(true);
@@ -106,26 +110,23 @@ const Index = () => {
       <div className="absolute top-0 right-0 w-[200px] md:w-[400px] h-[200px] md:h-[400px] bg-primary/3 rounded-full blur-[100px]" />
 
       <div className="relative z-10 flex flex-col items-center px-4 py-8 md:py-16">
-        {/* Header bar - desktop only */}
-        <div className="w-full max-w-5xl hidden md:flex justify-end items-center mb-12">
-          <div className="flex items-center gap-4">
-            <Link to="/privacy" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Privacy</Link>
-            <Link to="/terms" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Terms</Link>
-            <div className="flex items-center gap-1.5 glass rounded-full px-3 py-1">
-              <Users className="h-3.5 w-3.5 text-primary" />
-              <span className="text-xs font-mono font-semibold text-foreground">{downloadCount.toLocaleString()}</span>
-              <span className="text-[10px] text-muted-foreground">downloads</span>
+        {/* Header bar - desktop */}
+        <div className="w-full max-w-5xl hidden md:flex justify-between items-start mb-12">
+          <div />
+          <div className="flex flex-col items-end gap-3">
+            <div className="flex items-center gap-4">
+              <Link to="/privacy" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Privacy</Link>
+              <Link to="/terms" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Terms</Link>
+            </div>
+            <div className="w-64">
+              <SiteVisitTracker />
             </div>
           </div>
         </div>
 
-        {/* Mobile download counter */}
-        <div className="w-full max-w-3xl flex justify-end mb-3 md:hidden">
-          <div className="flex items-center gap-1.5 glass rounded-full px-3 py-1">
-            <Users className="h-3.5 w-3.5 text-primary" />
-            <span className="text-xs font-mono font-semibold text-foreground">{downloadCount.toLocaleString()}</span>
-            <span className="text-[10px] text-muted-foreground">downloads</span>
-          </div>
+        {/* Mobile visit tracker */}
+        <div className="w-full max-w-sm mb-3 md:hidden">
+          <SiteVisitTracker />
         </div>
 
         {/* Hero */}

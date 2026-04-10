@@ -186,6 +186,37 @@ serve(async (req) => {
     let body: unknown;
     try { body = await req.json(); } catch { return jsonResponse({ success: false, error: 'Invalid JSON' }, 400); }
 
+    // Handle site visit tracking (lightweight)
+    const bodyObj = body as Record<string, unknown>;
+    if (bodyObj.trackVisit === true && typeof bodyObj.siteName === 'string') {
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const sb = createClient(supabaseUrl, supabaseKey);
+        const siteName = (bodyObj.siteName as string).slice(0, 255);
+        
+        const { data: existing } = await sb
+          .from('site_visits')
+          .select('id, visit_count')
+          .eq('site_name', siteName)
+          .maybeSingle();
+        
+        if (existing) {
+          await sb.from('site_visits').update({ 
+            visit_count: existing.visit_count + 1,
+            last_visited_at: new Date().toISOString()
+          }).eq('id', existing.id);
+        } else {
+          await sb.from('site_visits').insert({
+            site_name: siteName,
+            url: `https://${siteName}`,
+            visit_count: 1,
+          });
+        }
+      } catch (e) { console.log('Visit tracking error:', e); }
+      return jsonResponse({ success: true, tracked: true });
+    }
+
     const input = sanitizeInput(body);
     if (input.error || !input.url) {
       return jsonResponse({ success: false, error: input.error || 'URL is required' }, 400);
@@ -257,7 +288,7 @@ serve(async (req) => {
     // Helper to cache + return results
     const cacheAndReturn = (result: Record<string, unknown>) => {
       setCache(url, result);
-      // Save to DB asynchronously (best-effort)
+      // Save to DB + track site visit asynchronously (best-effort)
       if ((result as any).success && (result as any).url) {
         try {
           const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -278,6 +309,18 @@ serve(async (req) => {
             format: sources[0]?.format || 'mp4',
             size: sources[0]?.size || '',
           }).then(() => {}).catch(() => {});
+
+          // Track site visit
+          const parsedUrl = new URL(url);
+          const siteName = parsedUrl.hostname.replace(/^www\./, '');
+          sb.from('site_visits').select('id, visit_count').eq('site_name', siteName).maybeSingle()
+            .then(({ data: existing }) => {
+              if (existing) {
+                sb.from('site_visits').update({ visit_count: existing.visit_count + 1, last_visited_at: new Date().toISOString() }).eq('id', existing.id).then(() => {}).catch(() => {});
+              } else {
+                sb.from('site_visits').insert({ site_name: siteName, url, visit_count: 1 }).then(() => {}).catch(() => {});
+              }
+            }).catch(() => {});
         } catch {}
       }
       return jsonResponse(result);
