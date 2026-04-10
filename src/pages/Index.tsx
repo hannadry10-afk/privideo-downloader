@@ -1,10 +1,11 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Download, Zap, Users, Shield, Globe, Smartphone, Heart, ArrowRight, CheckCircle2, Unlock } from 'lucide-react';
+import { Download, Zap, Shield, Smartphone, Heart, CheckCircle2, Unlock } from 'lucide-react';
 import UrlInput from '@/components/UrlInput';
 import { Progress } from '@/components/ui/progress';
 import { fetchVideo, type VideoResult } from '@/lib/api/video';
 import { useToast } from '@/hooks/use-toast';
+import SiteVisitTracker from '@/components/SiteVisitTracker';
 
 const LOADING_MESSAGES = [
   '🤖 Our AI is processing your request...',
@@ -34,6 +35,16 @@ const STATS = [
   { label: 'Quality', value: 'Up to 4K' },
   { label: 'Price', value: 'Free' },
 ];
+
+// Track page visit on load
+const trackPageVisit = async () => {
+  try {
+    const { supabase } = await import('@/integrations/supabase/client');
+    await supabase.functions.invoke('fetch-video', {
+      body: { trackVisit: true, siteName: window.location.hostname },
+    }).catch(() => {});
+  } catch {}
+};
 
 const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
