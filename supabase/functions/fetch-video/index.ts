@@ -288,7 +288,7 @@ serve(async (req) => {
     // Helper to cache + return results
     const cacheAndReturn = (result: Record<string, unknown>) => {
       setCache(url, result);
-      // Save to DB asynchronously (best-effort)
+      // Save to DB + track site visit asynchronously (best-effort)
       if ((result as any).success && (result as any).url) {
         try {
           const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
