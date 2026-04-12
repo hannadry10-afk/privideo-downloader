@@ -258,26 +258,48 @@ serve(async (req) => {
     const cacheAndReturn = (result: Record<string, unknown>) => {
       setCache(url, result);
       // Save to DB asynchronously (best-effort)
-      if ((result as any).success && (result as any).url) {
+      if ((result as any).success) {
         try {
           const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
           const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
           const sb = createClient(supabaseUrl, supabaseKey);
           const meta = (result as any).metadata || {};
           const sources = (result as any).videoSources || [];
-          sb.from('videos').insert({
-            video_url: (result as any).url || sources[0]?.url || '',
-            source_url: url,
-            title: meta.title || 'Untitled Video',
-            description: meta.description || '',
-            thumbnail: meta.thumbnail || '',
-            duration: meta.duration || '',
-            site_name: meta.siteName || '',
-            author: meta.author || '',
-            quality: sources[0]?.quality || '',
-            format: sources[0]?.format || 'mp4',
-            size: sources[0]?.size || '',
-          }).then(() => {}).catch(() => {});
+
+          // Save video to DB
+          if ((result as any).url) {
+            sb.from('videos').insert({
+              video_url: (result as any).url || sources[0]?.url || '',
+              source_url: url,
+              title: meta.title || 'Untitled Video',
+              description: meta.description || '',
+              thumbnail: meta.thumbnail || '',
+              duration: meta.duration || '',
+              site_name: meta.siteName || '',
+              author: meta.author || '',
+              quality: sources[0]?.quality || '',
+              format: sources[0]?.format || 'mp4',
+              size: sources[0]?.size || '',
+            }).then(() => {}).catch(() => {});
+          }
+
+          // Track site visit with real domain
+          try {
+            const parsed = new URL(url);
+            const domain = parsed.hostname.replace(/^www\./, '');
+            const siteName = meta.siteName || domain;
+            sb.rpc('upsert_site_visit', { p_site_name: siteName, p_url: url })
+              .then(() => {})
+              .catch(() => {
+                // Fallback: direct upsert
+                sb.from('site_visits')
+                  .upsert(
+                    { site_name: siteName, url: `https://${domain}`, visit_count: 1, last_visited_at: new Date().toISOString() },
+                    { onConflict: 'url' }
+                  )
+                  .then(() => {}).catch(() => {});
+              });
+          } catch {}
         } catch {}
       }
       return jsonResponse(result);
