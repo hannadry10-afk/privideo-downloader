@@ -213,6 +213,7 @@ const Index = () => {
               © 2026 Incognito Zone. All rights reserved.
             </p>
           </footer>
+          <PwaInstallBanner />
         </div>
       </div>
     </div>
