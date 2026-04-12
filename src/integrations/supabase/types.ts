@@ -97,7 +97,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      upsert_site_visit: {
+        Args: { p_site_name: string; p_url: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

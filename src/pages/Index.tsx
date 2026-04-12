@@ -7,6 +7,7 @@ import { fetchVideo, type VideoResult } from '@/lib/api/video';
 import { useToast } from '@/hooks/use-toast';
 import Navbar from '@/components/Navbar';
 import SiteVisitsTicker from '@/components/SiteVisitsTicker';
+import PwaInstallBanner from '@/components/PwaInstallBanner';
 
 const LOADING_MESSAGES = [
   '🤖 Our AI is processing your request...',
@@ -212,6 +213,7 @@ const Index = () => {
               © 2026 Incognito Zone. All rights reserved.
             </p>
           </footer>
+          <PwaInstallBanner />
         </div>
       </div>
     </div>

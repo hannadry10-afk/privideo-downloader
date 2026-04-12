@@ -40,6 +40,15 @@ const SiteVisitsTicker = () => {
 
   if (visits.length === 0) return null;
 
+  // Extract display domain from url field (e.g. "https://youtube.com/..." → "youtube.com")
+  const getDomain = (v: SiteVisit) => {
+    try {
+      return new URL(v.url).hostname.replace(/^www\./, '');
+    } catch {
+      return v.site_name || v.url;
+    }
+  };
+
   return (
     <div className="w-full max-w-md mx-auto">
       {/* Visit count */}
@@ -55,7 +64,7 @@ const SiteVisitsTicker = () => {
           {[...visits, ...visits].map((v, i) => (
             <span key={i} className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
               <Globe className="h-2.5 w-2.5 text-primary/60" />
-              {v.site_name}
+              {getDomain(v)}
             </span>
           ))}
         </div>
