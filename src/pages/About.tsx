@@ -13,7 +13,7 @@ const About = () => (
 
       <div className="space-y-6">
         {[
-          { icon: Download, title: 'Multi-Platform', desc: 'Download from YouTube, TikTok, Instagram, Twitter/X, Facebook, Reddit, Vimeo and hundreds more.' },
+          { icon: Download, title: 'Multi-Platform', desc: 'Download from YouTube, TikTok, Instagram, Twitter, Facebook, Reddit, Vimeo and hundreds more.' },
           { icon: Zap, title: 'Fast & Free', desc: 'No ads, no premium tiers, no limits. Powered by open-source tools.' },
           { icon: Shield, title: 'Privacy First', desc: 'We don't track you, store cookies, or keep your download history.' },
           { icon: Globe, title: 'Works Everywhere', desc: 'Fully responsive. Install as an app on your phone for quick access.' },
