@@ -19,16 +19,40 @@ const WatchPage = () => {
 
   const metadata = result.metadata;
 
-  // Get the best download URL
+  // Get the best (highest quality) download URL
   const getBestDownload = () => {
+    // Helper to pick highest quality from a list
+    const pickBest = (items: { url: string; quality?: string }[]) => {
+      if (!items || items.length === 0) return null;
+      const scored = items
+        .filter(i => i.url)
+        .map(i => {
+          const q = (i.quality || '').toLowerCase();
+          let score = 0;
+          const resMatch = q.match(/(\d{3,4})\s*p/);
+          if (resMatch) score = parseInt(resMatch[1], 10);
+          else if (q.includes('4k') || q.includes('2160')) score = 2160;
+          else if (q.includes('1080')) score = 1080;
+          else if (q.includes('720') || q === 'hd' || q.includes('hd+') || q.includes('hd (no watermark)')) score = 720;
+          else if (q.includes('480') || q === 'sd') score = 480;
+          else if (q.includes('high') || q.includes('best')) score = 720;
+          else score = 300;
+          return { ...i, score };
+        })
+        .sort((a, b) => b.score - a.score);
+      return scored[0] || null;
+    };
+
     if (result.type === 'direct' && result.url) {
       return { url: result.url, label: result.filename || 'Download Video' };
     }
     if (result.picker && result.picker.length > 0) {
-      return { url: result.picker[0].url, label: 'Download Video' };
+      const best = pickBest(result.picker);
+      if (best) return { url: best.url, label: best.quality ? `Download ${best.quality}` : 'Download Video' };
     }
     if (result.videoSources && result.videoSources.length > 0) {
-      return { url: result.videoSources[0].url, label: 'Download Video' };
+      const best = pickBest(result.videoSources);
+      if (best) return { url: best.url, label: best.quality ? `Download ${best.quality}` : 'Download Video' };
     }
     if (metadata?.videoUrl) {
       return { url: metadata.videoUrl, label: 'Download Video' };

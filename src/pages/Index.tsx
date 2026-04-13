@@ -114,7 +114,7 @@ const Index = () => {
             <div className="flex items-center gap-1.5 glass rounded-full px-3 py-1">
               <Users className="h-3.5 w-3.5 text-primary" />
               <span className="text-xs font-mono font-semibold text-foreground">{downloadCount.toLocaleString()}</span>
-              <span className="text-[10px] text-muted-foreground">downloads</span>
+              <span className="text-[10px] text-muted-foreground">visits</span>
             </div>
           </div>
         </div>
@@ -124,7 +124,7 @@ const Index = () => {
           <div className="flex items-center gap-1.5 glass rounded-full px-3 py-1">
             <Users className="h-3.5 w-3.5 text-primary" />
             <span className="text-xs font-mono font-semibold text-foreground">{downloadCount.toLocaleString()}</span>
-            <span className="text-[10px] text-muted-foreground">downloads</span>
+            <span className="text-[10px] text-muted-foreground">visits</span>
           </div>
         </div>
 
