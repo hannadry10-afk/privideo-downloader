@@ -2260,9 +2260,45 @@ async function tryPeerTube(url: string, pageData: PageData): Promise<Record<stri
 
 // ── Result builder ──
 
+function parseQualityScore(quality?: string): number {
+  if (!quality) return 0;
+  const q = quality.toLowerCase();
+  // Extract numeric resolution (e.g. "1080p" -> 1080, "720p" -> 720)
+  const resMatch = q.match(/(\d{3,4})\s*p/);
+  if (resMatch) return parseInt(resMatch[1], 10);
+  // Named quality tiers
+  if (q.includes('4k') || q.includes('2160')) return 2160;
+  if (q.includes('1440') || q.includes('2k')) return 1440;
+  if (q.includes('1080') || q.includes('full hd') || q.includes('fullhd')) return 1080;
+  if (q.includes('720') || q === 'hd' || q === 'hd+' || q.includes('hd (no watermark)')) return 720;
+  if (q.includes('480') || q === 'sd') return 480;
+  if (q.includes('360')) return 360;
+  if (q.includes('240')) return 240;
+  if (q.includes('144')) return 144;
+  // Bitrate-based (e.g. "2500kbps")
+  const brMatch = q.match(/(\d+)\s*kbps/);
+  if (brMatch) return Math.min(parseInt(brMatch[1], 10) / 3, 1080); // rough mapping
+  // HLS/Auto typically adaptive = decent quality
+  if (q.includes('auto') || q.includes('hls') || q.includes('adaptive')) return 500;
+  if (q.includes('high') || q.includes('best')) return 720;
+  if (q.includes('low') || q.includes('worst')) return 240;
+  if (q.includes('direct')) return 400;
+  return 300;
+}
+
+function sortSourcesByQuality(sources: VideoSource[]): VideoSource[] {
+  return [...sources].sort((a, b) => {
+    // Prefer non-audio sources
+    if (a.type === 'audio' && b.type !== 'audio') return 1;
+    if (a.type !== 'audio' && b.type === 'audio') return -1;
+    // Sort by quality score descending (highest first)
+    return parseQualityScore(b.quality) - parseQualityScore(a.quality);
+  });
+}
+
 function buildPickerResult(sources: VideoSource[], metadata: Record<string, string>): Record<string, unknown> {
   const unique = mergeUniqueSources(sources);
-  const filtered = filterAdSources(unique);
+  const filtered = sortSourcesByQuality(filterAdSources(unique));
   if (filtered.length === 0) return { success: true, type: 'metadata_only', metadata, videoSources: [] };
 
   return {
