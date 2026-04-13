@@ -186,7 +186,7 @@ const WatchPage = () => {
           {best ? (
             <div className="space-y-2">
               <Button
-                onClick={() => forceDownload(best.url)}
+                onClick={() => forceDownload(best.url, best.badge)}
                 className="w-full h-12 md:h-14 rounded-xl md:rounded-2xl bg-primary text-primary-foreground font-semibold text-sm md:text-base gap-2"
               >
                 <Download className="h-5 w-5" />
