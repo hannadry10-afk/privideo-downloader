@@ -453,7 +453,7 @@ serve(async (req) => {
     ));
 
     if (sourceCandidates.length > 0) {
-      const verified = await verifyVideoSources(sourceCandidates, url);
+      const verified = sortSourcesByQuality(await verifyVideoSources(sourceCandidates, url));
       if (verified.length > 0) {
         return cacheAndReturn({
           success: true,
