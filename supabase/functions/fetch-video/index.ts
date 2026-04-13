@@ -1671,7 +1671,39 @@ async function tryAdultSite(url: string, pageData: PageData): Promise<Record<str
         }
         if (fv.mediaDefinitions && Array.isArray(fv.mediaDefinitions)) {
           for (const md of fv.mediaDefinitions) {
-            if (md.videoUrl) sources.push({ url: md.videoUrl, quality: md.quality ? `${md.quality}p` : 'Auto', format: md.format || 'mp4', type: 'combined' });
+            if (md.videoUrl) {
+              // PornHub mediaDefinitions: videoUrl can be a URL that returns JSON with actual video URLs
+              if (md.videoUrl.includes('.m3u8')) {
+                // HLS manifest — will be resolved by buildPickerResult
+                sources.push({ url: md.videoUrl, quality: md.quality ? `${md.quality}p` : 'Auto (HLS)', format: 'hls', type: 'combined' });
+              } else if (md.format === 'mp4' || !md.videoUrl.includes('.m3u8')) {
+                // Check if videoUrl is a JSON endpoint that returns actual video URLs
+                try {
+                  const mdRes = await fetch(md.videoUrl, {
+                    headers: { 'User-Agent': USER_AGENTS[0], 'Referer': url },
+                    signal: AbortSignal.timeout(5000),
+                    redirect: 'follow',
+                  });
+                  const ct = mdRes.headers.get('content-type') || '';
+                  if (ct.includes('json')) {
+                    const mdData = await mdRes.json();
+                    if (Array.isArray(mdData)) {
+                      for (const item of mdData) {
+                        if (item.videoUrl && typeof item.videoUrl === 'string' && !item.videoUrl.includes('.m3u8')) {
+                          sources.push({ url: item.videoUrl, quality: item.quality ? `${item.quality}p` : 'Direct', format: 'mp4', type: 'combined' });
+                        } else if (item.videoUrl && item.videoUrl.includes('.m3u8')) {
+                          sources.push({ url: item.videoUrl, quality: item.quality ? `${item.quality}p` : 'Auto (HLS)', format: 'hls', type: 'combined' });
+                        }
+                      }
+                    }
+                  } else {
+                    sources.push({ url: md.videoUrl, quality: md.quality ? `${md.quality}p` : 'Auto', format: md.format || 'mp4', type: 'combined' });
+                  }
+                } catch {
+                  sources.push({ url: md.videoUrl, quality: md.quality ? `${md.quality}p` : 'Auto', format: md.format || 'mp4', type: 'combined' });
+                }
+              }
+            }
           }
         }
       } catch {}
