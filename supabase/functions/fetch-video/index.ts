@@ -635,7 +635,7 @@ async function tryCobaltMulti(url: string, pageData: PageData): Promise<Record<s
       const res = await fetch(instance, {
         method: 'POST',
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, downloadMode: 'auto', filenameStyle: 'pretty' }),
+        body: JSON.stringify({ url, downloadMode: 'auto', filenameStyle: 'pretty', videoQuality: 'max' }),
         signal: AbortSignal.timeout(10000),
       });
       if (!res.ok) continue;
