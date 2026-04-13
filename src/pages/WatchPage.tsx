@@ -97,7 +97,25 @@ const WatchPage = () => {
   const best = allDownloads[0] || null;
   const others = allDownloads.slice(1);
 
-  const forceDownload = (url: string) => {
+  const forceDownload = async (url: string, label?: string) => {
+    // Try blob download for cross-origin files
+    try {
+      const response = await fetch(url, { mode: 'cors' });
+      if (response.ok) {
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = `${(metadata?.title || 'video').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().replace(/\s+/g, '_')}_${label || 'video'}.mp4`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+        return;
+      }
+    } catch {
+      // Blob download failed (CORS), fall back to open in new tab
+    }
     const a = document.createElement('a');
     a.href = url;
     a.target = '_blank';
@@ -168,7 +186,7 @@ const WatchPage = () => {
           {best ? (
             <div className="space-y-2">
               <Button
-                onClick={() => forceDownload(best.url)}
+                onClick={() => forceDownload(best.url, best.badge)}
                 className="w-full h-12 md:h-14 rounded-xl md:rounded-2xl bg-primary text-primary-foreground font-semibold text-sm md:text-base gap-2"
               >
                 <Download className="h-5 w-5" />
@@ -191,7 +209,7 @@ const WatchPage = () => {
                       {others.map((src, i) => (
                         <button
                           key={i}
-                          onClick={() => forceDownload(src.url)}
+                          onClick={() => forceDownload(src.url, src.badge)}
                           className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg hover:bg-accent/50 transition-colors group"
                         >
                           <div className="flex items-center gap-2 min-w-0">
