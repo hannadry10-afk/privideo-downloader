@@ -2387,9 +2387,11 @@ function sortSourcesByQuality(sources: VideoSource[]): VideoSource[] {
   });
 }
 
-function buildPickerResult(sources: VideoSource[], metadata: Record<string, string>): Record<string, unknown> {
+async function buildPickerResult(sources: VideoSource[], metadata: Record<string, string>): Promise<Record<string, unknown>> {
   const unique = mergeUniqueSources(sources);
-  const filtered = sortSourcesByQuality(filterAdSources(unique));
+  // Resolve any HLS/M3U8 sources to their variant streams
+  const resolved = await resolveAllHlsSources(filterAdSources(unique));
+  const filtered = sortSourcesByQuality(resolved);
   if (filtered.length === 0) return { success: true, type: 'metadata_only', metadata, videoSources: [] };
 
   return {
