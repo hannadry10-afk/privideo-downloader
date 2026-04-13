@@ -2258,15 +2258,107 @@ async function tryPeerTube(url: string, pageData: PageData): Promise<Record<stri
   return null;
 }
 
+// ── HLS Manifest Resolver ──
+
+async function resolveHlsManifest(m3u8Url: string, referer?: string): Promise<VideoSource[]> {
+  const sources: VideoSource[] = [];
+  try {
+    const res = await fetch(m3u8Url, {
+      headers: {
+        'User-Agent': USER_AGENTS[0],
+        ...(referer ? { 'Referer': referer } : {}),
+      },
+      signal: AbortSignal.timeout(8000),
+      redirect: 'follow',
+    });
+    if (!res.ok) return sources;
+    const text = await res.text();
+    const baseUrl = m3u8Url.substring(0, m3u8Url.lastIndexOf('/') + 1);
+
+    // Check if this is a master playlist (contains #EXT-X-STREAM-INF)
+    if (text.includes('#EXT-X-STREAM-INF')) {
+      const lines = text.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line.startsWith('#EXT-X-STREAM-INF')) continue;
+        
+        // Extract resolution and bandwidth
+        const resMatch = line.match(/RESOLUTION=(\d+)x(\d+)/i);
+        const bwMatch = line.match(/BANDWIDTH=(\d+)/i);
+        const height = resMatch ? parseInt(resMatch[2], 10) : 0;
+        const bandwidth = bwMatch ? parseInt(bwMatch[1], 10) : 0;
+        
+        // Next non-comment line is the URL
+        let streamUrl = '';
+        for (let j = i + 1; j < lines.length; j++) {
+          const nextLine = lines[j].trim();
+          if (nextLine && !nextLine.startsWith('#')) {
+            streamUrl = nextLine;
+            break;
+          }
+        }
+        
+        if (!streamUrl) continue;
+        
+        // Resolve relative URLs
+        if (!streamUrl.startsWith('http')) {
+          streamUrl = streamUrl.startsWith('/') 
+            ? new URL(streamUrl, m3u8Url).href 
+            : baseUrl + streamUrl;
+        }
+        
+        const quality = height ? `${height}p` : (bandwidth > 2000000 ? 'HD' : 'SD');
+        sources.push({
+          url: streamUrl,
+          quality,
+          format: 'mp4',
+          type: 'combined',
+          size: bandwidth ? `${Math.round(bandwidth / 1000)}kbps` : undefined,
+        });
+      }
+    } else {
+      // This is a media playlist (actual segments) — return the m3u8 itself as a source
+      // Try to detect quality from URL path
+      const pathQuality = m3u8Url.match(/(\d{3,4})[Pp_]/)?.[1];
+      sources.push({
+        url: m3u8Url,
+        quality: pathQuality ? `${pathQuality}p` : 'Auto',
+        format: 'hls',
+        type: 'combined',
+      });
+    }
+  } catch (e) {
+    console.log('HLS manifest resolution failed:', e);
+  }
+  return sources;
+}
+
+async function resolveAllHlsSources(sources: VideoSource[], referer?: string): Promise<VideoSource[]> {
+  const resolved: VideoSource[] = [];
+  
+  for (const source of sources) {
+    if (source.url?.match(/\.m3u8(?:\?|$)/i) || source.format === 'hls') {
+      const hlsSources = await resolveHlsManifest(source.url, referer);
+      if (hlsSources.length > 0) {
+        resolved.push(...hlsSources);
+      } else {
+        resolved.push(source); // Keep original if resolution fails
+      }
+    } else {
+      resolved.push(source);
+    }
+  }
+  
+  return resolved;
+}
+
 // ── Result builder ──
 
 function parseQualityScore(quality?: string): number {
   if (!quality) return 0;
   const q = quality.toLowerCase();
-  // Extract numeric resolution (e.g. "1080p" -> 1080, "720p" -> 720)
   const resMatch = q.match(/(\d{3,4})\s*p/);
   if (resMatch) return parseInt(resMatch[1], 10);
-  // Named quality tiers
   if (q.includes('4k') || q.includes('2160')) return 2160;
   if (q.includes('1440') || q.includes('2k')) return 1440;
   if (q.includes('1080') || q.includes('full hd') || q.includes('fullhd')) return 1080;
@@ -2275,10 +2367,8 @@ function parseQualityScore(quality?: string): number {
   if (q.includes('360')) return 360;
   if (q.includes('240')) return 240;
   if (q.includes('144')) return 144;
-  // Bitrate-based (e.g. "2500kbps")
   const brMatch = q.match(/(\d+)\s*kbps/);
-  if (brMatch) return Math.min(parseInt(brMatch[1], 10) / 3, 1080); // rough mapping
-  // HLS/Auto typically adaptive = decent quality
+  if (brMatch) return Math.min(parseInt(brMatch[1], 10) / 3, 1080);
   if (q.includes('auto') || q.includes('hls') || q.includes('adaptive')) return 500;
   if (q.includes('high') || q.includes('best')) return 720;
   if (q.includes('low') || q.includes('worst')) return 240;
@@ -2288,10 +2378,11 @@ function parseQualityScore(quality?: string): number {
 
 function sortSourcesByQuality(sources: VideoSource[]): VideoSource[] {
   return [...sources].sort((a, b) => {
-    // Prefer non-audio sources
     if (a.type === 'audio' && b.type !== 'audio') return 1;
     if (a.type !== 'audio' && b.type === 'audio') return -1;
-    // Sort by quality score descending (highest first)
+    // Prefer MP4 over HLS when same quality
+    if (a.format !== 'hls' && b.format === 'hls' && parseQualityScore(a.quality) >= parseQualityScore(b.quality)) return -1;
+    if (a.format === 'hls' && b.format !== 'hls' && parseQualityScore(a.quality) <= parseQualityScore(b.quality)) return 1;
     return parseQualityScore(b.quality) - parseQualityScore(a.quality);
   });
 }
