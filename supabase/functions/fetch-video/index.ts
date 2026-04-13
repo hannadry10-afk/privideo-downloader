@@ -692,7 +692,7 @@ async function tryInvidious(url: string, pageData: PageData): Promise<Record<str
       if (sources.length > 0) {
         const thumb = data.videoThumbnails?.find((t: any) => t.quality === 'maxresdefault')?.url || data.videoThumbnails?.[0]?.url || pageData.metadata.thumbnail;
         const meta = { ...pageData.metadata, title: data.title || pageData.metadata.title, thumbnail: thumb, author: data.author || pageData.metadata.author, duration: data.lengthSeconds?.toString() || pageData.metadata.duration };
-        return buildPickerResult(sources, meta);
+        return await buildPickerResult(sources, meta);
       }
     } catch { continue; }
   }
@@ -746,7 +746,7 @@ async function tryPiped(url: string, pageData: PageData): Promise<Record<string,
           author: data.uploader || pageData.metadata.author,
           duration: data.duration?.toString() || pageData.metadata.duration,
         };
-        return buildPickerResult(sources, meta);
+        return await buildPickerResult(sources, meta);
       }
     } catch { continue; }
   }
@@ -780,7 +780,7 @@ async function tryTikTok(url: string, pageData: PageData): Promise<Record<string
             author: d.author?.nickname || d.author?.unique_id || pageData.metadata.author,
             duration: d.duration?.toString() || pageData.metadata.duration,
           };
-          return buildPickerResult(sources, meta);
+          return await buildPickerResult(sources, meta);
         }
       }
     }
@@ -830,7 +830,7 @@ async function tryTikTok(url: string, pageData: PageData): Promise<Record<string
       const unique = [...new Set(videoUrls)].filter(u => u.startsWith('http') && !isAdUrl(u));
       if (unique.length > 0) {
         const sources = unique.map(u => ({ url: u, quality: 'Direct', format: 'mp4', type: 'combined' as const }));
-        return buildPickerResult(sources, pageData.metadata);
+        return await buildPickerResult(sources, pageData.metadata);
       }
     }
   } catch (e) { console.log('TikTok mobile scrape failed:', e); }
@@ -874,7 +874,7 @@ async function tryTwitter(url: string, pageData: PageData): Promise<Record<strin
             thumbnail: tweet.media?.photos?.[0]?.url || tweet.media?.videos?.[0]?.thumbnail_url || pageData.metadata.thumbnail,
             siteName: 'Twitter / X',
           };
-          return buildPickerResult(sources, meta);
+          return await buildPickerResult(sources, meta);
         }
       }
     }
@@ -904,7 +904,7 @@ async function tryTwitter(url: string, pageData: PageData): Promise<Record<strin
             thumbnail: data.media_extended?.[0]?.thumbnail_url || pageData.metadata.thumbnail,
             siteName: 'Twitter / X',
           };
-          return buildPickerResult(sources, meta);
+          return await buildPickerResult(sources, meta);
         }
       }
     }
@@ -941,7 +941,7 @@ async function tryTwitter(url: string, pageData: PageData): Promise<Record<strin
 
       if (sources.length > 0) {
         const meta = { ...pageData.metadata, author: user, siteName: 'Twitter / X' };
-        return buildPickerResult(sources, meta);
+        return await buildPickerResult(sources, meta);
       }
     } catch { continue; }
   }
@@ -972,7 +972,7 @@ async function tryInstagram(url: string, pageData: PageData): Promise<Record<str
         const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']*)["']/i);
         const ogThumb = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']*)["']/i);
         const meta = { ...pageData.metadata, title: ogTitle?.[1] || pageData.metadata.title, thumbnail: ogThumb?.[1] || pageData.metadata.thumbnail, siteName: 'Instagram' };
-        return buildPickerResult(mergeUniqueSources(sources), meta);
+        return await buildPickerResult(mergeUniqueSources(sources), meta);
       }
     }
   } catch (e) { console.log('ddinstagram failed:', e); }
@@ -994,7 +994,7 @@ async function tryInstagram(url: string, pageData: PageData): Promise<Record<str
         while ((m = videoSrcRegex.exec(html)) !== null) sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: 'mp4', type: 'combined' });
         const dataVideoRegex = /data-video=["'](https?:\/\/[^"']+)["']/gi;
         while ((m = dataVideoRegex.exec(html)) !== null) sources.push({ url: normalizeExtractedUrl(m[1]), quality: 'Direct', format: 'mp4', type: 'combined' });
-        if (sources.length > 0) return buildPickerResult(mergeUniqueSources(sources), { ...pageData.metadata, siteName: 'Instagram' });
+        if (sources.length > 0) return await buildPickerResult(mergeUniqueSources(sources), { ...pageData.metadata, siteName: 'Instagram' });
       }
     }
   } catch (e) { console.log('imginn failed:', e); }
@@ -1019,7 +1019,7 @@ async function tryInstagram(url: string, pageData: PageData): Promise<Record<str
           const candidate = normalizeExtractedUrl(m[1]);
           if (/\.mp4|video/i.test(candidate)) sources.push({ url: candidate, quality: 'Direct', format: 'mp4', type: 'combined' });
         }
-        if (sources.length > 0) return buildPickerResult(mergeUniqueSources(sources), { ...pageData.metadata, siteName: 'Instagram' });
+        if (sources.length > 0) return await buildPickerResult(mergeUniqueSources(sources), { ...pageData.metadata, siteName: 'Instagram' });
       }
     }
   } catch (e) { console.log('Instagram embed failed:', e); }
@@ -1078,7 +1078,7 @@ async function tryDailymotion(url: string, pageData: PageData): Promise<Record<s
       meta.duration = playerData.duration?.toString() || meta.duration;
     }
 
-    if (sources.length > 0) return buildPickerResult(filterAdSources(sources), meta);
+    if (sources.length > 0) return await buildPickerResult(filterAdSources(sources), meta);
   } catch (e) { console.log('Dailymotion extraction failed:', e); }
 
   return null;
@@ -1142,7 +1142,7 @@ async function tryVimeo(url: string, pageData: PageData): Promise<Record<string,
       meta.thumbnail = config.video?.thumbs?.base || meta.thumbnail;
       meta.title = config.video?.title || meta.title;
 
-      if (sources.length > 0) return buildPickerResult(sources, meta);
+      if (sources.length > 0) return await buildPickerResult(sources, meta);
     }
   } catch (e) { console.log('Vimeo extraction failed:', e); }
 
@@ -1189,7 +1189,7 @@ async function tryRumble(url: string, pageData: PageData): Promise<Record<string
     const meta = extractMetadata(html, url);
     meta.siteName = 'Rumble';
 
-    if (sources.length > 0) return buildPickerResult(filterAdSources(mergeUniqueSources(sources)), meta);
+    if (sources.length > 0) return await buildPickerResult(filterAdSources(mergeUniqueSources(sources)), meta);
   } catch (e) { console.log('Rumble extraction failed:', e); }
 
   return null;
@@ -1225,7 +1225,7 @@ async function tryStreamable(url: string, pageData: PageData): Promise<Record<st
         thumbnail: data.thumbnail_url ? (data.thumbnail_url.startsWith('//') ? `https:${data.thumbnail_url}` : data.thumbnail_url) : pageData.metadata.thumbnail,
         siteName: 'Streamable',
       };
-      if (sources.length > 0) return buildPickerResult(sources, meta);
+      if (sources.length > 0) return await buildPickerResult(sources, meta);
     }
   } catch (e) { console.log('Streamable extraction failed:', e); }
 
@@ -1274,7 +1274,7 @@ async function tryReddit(url: string, pageData: PageData): Promise<Record<string
       siteName: 'Reddit',
     };
 
-    if (sources.length > 0) return buildPickerResult(sources, meta);
+    if (sources.length > 0) return await buildPickerResult(sources, meta);
   } catch (e) { console.log('Reddit extraction failed:', e); }
 
   return null;
@@ -1328,7 +1328,7 @@ async function tryTwitch(url: string, pageData: PageData): Promise<Record<string
 
         const meta = extractMetadata(html, url);
         meta.siteName = 'Twitch';
-        if (sources.length > 0) return buildPickerResult(mergeUniqueSources(sources), meta);
+        if (sources.length > 0) return await buildPickerResult(mergeUniqueSources(sources), meta);
       }
     } catch (e) { console.log('Twitch clip scrape failed:', e); }
   }
@@ -1355,7 +1355,7 @@ async function tryTwitch(url: string, pageData: PageData): Promise<Record<string
         
         const meta = extractMetadata(html, url);
         meta.siteName = 'Twitch';
-        if (sources.length > 0) return buildPickerResult(sources, meta);
+        if (sources.length > 0) return await buildPickerResult(sources, meta);
       }
     }
   } catch (e) { console.log('Twitch VOD failed:', e); }
@@ -1433,7 +1433,7 @@ async function tryBilibili(url: string, pageData: PageData): Promise<Record<stri
             siteName: 'Bilibili',
           };
           
-          if (sources.length > 0) return buildPickerResult(sources, meta);
+          if (sources.length > 0) return await buildPickerResult(sources, meta);
         }
       }
     } catch (e) { console.log('Bilibili API failed:', e); }
@@ -1471,7 +1471,7 @@ async function tryBilibili(url: string, pageData: PageData): Promise<Record<stri
       
       const meta = extractMetadata(html, url);
       meta.siteName = 'Bilibili';
-      if (sources.length > 0) return buildPickerResult(sources, meta);
+      if (sources.length > 0) return await buildPickerResult(sources, meta);
     }
   } catch (e) { console.log('Bilibili scrape failed:', e); }
 
@@ -1523,7 +1523,7 @@ async function tryOKru(url: string, pageData: PageData): Promise<Record<string, 
 
     const meta = extractMetadata(html, url);
     meta.siteName = 'OK.ru';
-    if (sources.length > 0) return buildPickerResult(filterAdSources(mergeUniqueSources(sources)), meta);
+    if (sources.length > 0) return await buildPickerResult(filterAdSources(mergeUniqueSources(sources)), meta);
   } catch (e) { console.log('OK.ru extraction failed:', e); }
 
   return null;
@@ -1624,8 +1624,8 @@ async function tryAnime(url: string, pageData: PageData): Promise<Record<string,
     const filtered = filterAdSources(mergeUniqueSources(sources));
     if (filtered.length > 0) {
       const verified = await verifyVideoSources(filtered, url);
-      if (verified.length > 0) return buildPickerResult(verified, meta);
-      return buildPickerResult(filtered, meta);
+      if (verified.length > 0) return await buildPickerResult(verified, meta);
+      return await buildPickerResult(filtered, meta);
     }
   } catch (e) { console.log('Anime extraction failed:', e); }
 
@@ -1694,7 +1694,7 @@ async function tryAdultSite(url: string, pageData: PageData): Promise<Record<str
 
     const meta = extractMetadata(html, url);
     const filtered = filterAdSources(mergeUniqueSources(sources));
-    if (filtered.length > 0) return buildPickerResult(filtered, meta);
+    if (filtered.length > 0) return await buildPickerResult(filtered, meta);
   } catch (e) { console.log('Adult site extraction failed:', e); }
 
   return null;
@@ -1753,7 +1753,7 @@ async function tryDeepIframeScrape(url: string, pageData: PageData): Promise<Rec
   if (filtered.length > 0) {
     const verified = await verifyVideoSources(filtered, url);
     if (verified.length > 0) {
-      return buildPickerResult(verified, pageData.metadata);
+      return await buildPickerResult(verified, pageData.metadata);
     }
   }
 
@@ -1815,7 +1815,7 @@ async function tryFacebook(url: string, pageData: PageData): Promise<Record<stri
       const meta = extractMetadata(html, url);
       meta.siteName = 'Facebook';
       const filtered = filterAdSources(mergeUniqueSources(sources));
-      if (filtered.length > 0) return buildPickerResult(filtered, meta);
+      if (filtered.length > 0) return await buildPickerResult(filtered, meta);
     }
   } catch (e) { console.log('Facebook mbasic failed:', e); }
 
@@ -1829,7 +1829,7 @@ async function tryFacebook(url: string, pageData: PageData): Promise<Record<stri
         const meta = extractMetadata(html, res.url);
         meta.siteName = 'Facebook';
         const filtered = filterAdSources(mergeUniqueSources(sources));
-        if (filtered.length > 0) return buildPickerResult(filtered, meta);
+        if (filtered.length > 0) return await buildPickerResult(filtered, meta);
       }
     } catch {}
   }
@@ -1867,7 +1867,7 @@ async function tryPinterest(url: string, pageData: PageData): Promise<Record<str
     const meta = extractMetadata(html, url);
     meta.siteName = 'Pinterest';
     const filtered = filterAdSources(mergeUniqueSources(sources));
-    if (filtered.length > 0) return buildPickerResult(filtered, meta);
+    if (filtered.length > 0) return await buildPickerResult(filtered, meta);
   } catch (e) { console.log('Pinterest extraction failed:', e); }
   return null;
 }
@@ -1905,7 +1905,7 @@ async function tryLoom(url: string, pageData: PageData): Promise<Record<string, 
       const sources = extractVideoSources(html, url);
       const meta = extractMetadata(html, url);
       meta.siteName = 'Loom';
-      if (sources.length > 0) return buildPickerResult(filterAdSources(mergeUniqueSources(sources)), meta);
+      if (sources.length > 0) return await buildPickerResult(filterAdSources(mergeUniqueSources(sources)), meta);
     }
   } catch {}
   return null;
@@ -1932,7 +1932,7 @@ async function tryWistia(url: string, pageData: PageData): Promise<Record<string
         }
       }
       const meta = { ...pageData.metadata, title: media?.name || pageData.metadata.title, thumbnail: media?.thumbnail?.url || pageData.metadata.thumbnail, duration: media?.duration?.toString(), siteName: 'Wistia' };
-      if (sources.length > 0) return buildPickerResult(sources, meta);
+      if (sources.length > 0) return await buildPickerResult(sources, meta);
     }
   } catch (e) { console.log('Wistia extraction failed:', e); }
   return null;
@@ -1968,7 +1968,7 @@ async function tryEmbedPlayer(url: string, pageData: PageData): Promise<Record<s
     sources.push(...extractVideoSources(html, url));
     const meta = extractMetadata(html, url);
     const filtered = filterAdSources(mergeUniqueSources(sources));
-    if (filtered.length > 0) return buildPickerResult(filtered, meta);
+    if (filtered.length > 0) return await buildPickerResult(filtered, meta);
   } catch (e) { console.log('Embed player extraction failed:', e); }
   return null;
 }
@@ -1993,7 +1993,7 @@ async function tryVidyard(url: string, pageData: PageData): Promise<Record<strin
         }
       }
       const meta = { ...pageData.metadata, title: data.payload?.vyContext?.name || pageData.metadata.title, siteName: 'Vidyard' };
-      if (sources.length > 0) return buildPickerResult(sources, meta);
+      if (sources.length > 0) return await buildPickerResult(sources, meta);
     }
   } catch (e) { console.log('Vidyard extraction failed:', e); }
   return null;
@@ -2015,7 +2015,7 @@ async function tryBitchute(url: string, pageData: PageData): Promise<Record<stri
     const meta = extractMetadata(html, url);
     meta.siteName = 'Bitchute';
     const filtered = filterAdSources(mergeUniqueSources(sources));
-    if (filtered.length > 0) return buildPickerResult(filtered, meta);
+    if (filtered.length > 0) return await buildPickerResult(filtered, meta);
   } catch (e) { console.log('Bitchute extraction failed:', e); }
   return null;
 }
@@ -2037,7 +2037,7 @@ async function tryOdysee(url: string, pageData: PageData): Promise<Record<string
     const meta = extractMetadata(html, url);
     meta.siteName = 'Odysee';
     const filtered = filterAdSources(mergeUniqueSources(sources));
-    if (filtered.length > 0) return buildPickerResult(filtered, meta);
+    if (filtered.length > 0) return await buildPickerResult(filtered, meta);
   } catch (e) { console.log('Odysee extraction failed:', e); }
   return null;
 }
@@ -2076,7 +2076,7 @@ async function tryKick(url: string, pageData: PageData): Promise<Record<string, 
       const sources = extractVideoSources(html, url);
       const meta = extractMetadata(html, url);
       meta.siteName = 'Kick';
-      if (sources.length > 0) return buildPickerResult(filterAdSources(mergeUniqueSources(sources)), meta);
+      if (sources.length > 0) return await buildPickerResult(filterAdSources(mergeUniqueSources(sources)), meta);
     }
   } catch {}
   return null;
@@ -2106,7 +2106,7 @@ async function try9GAG(url: string, pageData: PageData): Promise<Record<string, 
     const meta = extractMetadata(html, url);
     meta.siteName = '9GAG';
     const filtered = filterAdSources(mergeUniqueSources(sources));
-    if (filtered.length > 0) return buildPickerResult(filtered, meta);
+    if (filtered.length > 0) return await buildPickerResult(filtered, meta);
   } catch (e) { console.log('9GAG extraction failed:', e); }
   return null;
 }
@@ -2138,7 +2138,7 @@ async function tryImgur(url: string, pageData: PageData): Promise<Record<string,
       const sources = extractVideoSources(html, url);
       const meta = extractMetadata(html, url);
       meta.siteName = 'Imgur';
-      if (sources.length > 0) return buildPickerResult(filterAdSources(mergeUniqueSources(sources)), meta);
+      if (sources.length > 0) return await buildPickerResult(filterAdSources(mergeUniqueSources(sources)), meta);
     }
   } catch {}
   return null;
@@ -2163,7 +2163,7 @@ async function tryCoub(url: string, pageData: PageData): Promise<Record<string, 
         if (fv.low?.url) sources.push({ url: fv.low.url, quality: 'Low', format: 'mp4' });
       }
       const meta = { ...pageData.metadata, title: data.title || 'Coub', thumbnail: data.picture || '', siteName: 'Coub', author: data.channel?.title || '' };
-      if (sources.length > 0) return buildPickerResult(sources, meta);
+      if (sources.length > 0) return await buildPickerResult(sources, meta);
     }
   } catch (e) { console.log('Coub extraction failed:', e); }
   return null;
@@ -2197,7 +2197,7 @@ async function tryVK(url: string, pageData: PageData): Promise<Record<string, un
     const meta = extractMetadata(html, url);
     meta.siteName = 'VK';
     const filtered = filterAdSources(mergeUniqueSources(sources));
-    if (filtered.length > 0) return buildPickerResult(filtered, meta);
+    if (filtered.length > 0) return await buildPickerResult(filtered, meta);
   } catch (e) { console.log('VK extraction failed:', e); }
   return null;
 }
@@ -2218,7 +2218,7 @@ async function tryRutube(url: string, pageData: PageData): Promise<Record<string
       if (data.video_balancer?.m3u8) sources.push({ url: data.video_balancer.m3u8, quality: 'Auto (HLS)', format: 'hls' });
       if (data.video_balancer?.default) sources.push({ url: data.video_balancer.default, quality: 'Direct', format: 'mp4' });
       const meta = { ...pageData.metadata, title: data.title || pageData.metadata.title, thumbnail: data.thumbnail_url || pageData.metadata.thumbnail, author: data.author?.name || '', duration: data.duration?.toString() || '', siteName: 'Rutube' };
-      if (sources.length > 0) return buildPickerResult(sources, meta);
+      if (sources.length > 0) return await buildPickerResult(sources, meta);
     }
   } catch (e) { console.log('Rutube extraction failed:', e); }
   return null;
@@ -2252,7 +2252,7 @@ async function tryPeerTube(url: string, pageData: PageData): Promise<Record<stri
         }
       }
       const meta = { ...pageData.metadata, title: data.name || pageData.metadata.title, thumbnail: data.previewPath ? `${baseUrl}${data.previewPath}` : pageData.metadata.thumbnail, author: data.account?.displayName || '', duration: data.duration?.toString() || '', siteName: 'PeerTube' };
-      if (sources.length > 0) return buildPickerResult(sources, meta);
+      if (sources.length > 0) return await buildPickerResult(sources, meta);
     }
   } catch (e) { console.log('PeerTube extraction failed:', e); }
   return null;
