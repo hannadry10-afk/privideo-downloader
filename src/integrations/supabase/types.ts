@@ -14,33 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      site_visits: {
-        Row: {
-          created_at: string
-          id: string
-          last_visited_at: string
-          site_name: string
-          url: string
-          visit_count: number
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          last_visited_at?: string
-          site_name: string
-          url: string
-          visit_count?: number
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          last_visited_at?: string
-          site_name?: string
-          url?: string
-          visit_count?: number
-        }
-        Relationships: []
-      }
       videos: {
         Row: {
           author: string | null
@@ -97,10 +70,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      upsert_site_visit: {
-        Args: { p_site_name: string; p_url: string }
-        Returns: undefined
-      }
+      [_ in never]: never
     }
     Enums: {
       [_ in never]: never
