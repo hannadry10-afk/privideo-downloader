@@ -209,7 +209,7 @@ const WatchPage = () => {
                       {others.map((src, i) => (
                         <button
                           key={i}
-                          onClick={() => forceDownload(src.url)}
+                          onClick={() => forceDownload(src.url, src.badge)}
                           className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg hover:bg-accent/50 transition-colors group"
                         >
                           <div className="flex items-center gap-2 min-w-0">
