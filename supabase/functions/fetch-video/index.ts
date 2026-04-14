@@ -18,6 +18,10 @@ function getCached(url: string): unknown | null {
     resultCache.delete(url);
     return null;
   }
+  if (isStalePlaybackResult(entry.data)) {
+    resultCache.delete(url);
+    return null;
+  }
   return entry.data;
 }
 
@@ -140,6 +144,20 @@ function periodicCleanup() {
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  const reqUrl = new URL(req.url);
+  const proxyTarget = reqUrl.searchParams.get('proxy');
+  if (proxyTarget) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      return jsonResponse({ success: false, error: 'Proxy only supports GET and HEAD' }, 405);
+    }
+    return await proxyMediaRequest(
+      req,
+      proxyTarget,
+      reqUrl.searchParams.get('referer') || undefined,
+      reqUrl.searchParams.get('filename') || undefined,
+    );
   }
 
   // Only allow POST
@@ -497,6 +515,268 @@ function jsonResponse(data: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
+}
+
+function isStalePlaybackResult(data: unknown): boolean {
+  if (!data || typeof data !== 'object') return false;
+
+  const result = data as Record<string, unknown>;
+  const candidates = [
+    ...(Array.isArray(result.picker) ? result.picker : []),
+    ...(Array.isArray(result.videoSources) ? result.videoSources : []),
+  ] as Array<Record<string, unknown>>;
+
+  return candidates.some((item) => {
+    const url = typeof item?.url === 'string' ? item.url : '';
+    return /(?:phncdn\.com\/hls\/|\/master\.m3u8(?:\?|$))/i.test(url);
+  });
+}
+
+function buildProxyUrl(targetUrl: string, referer?: string, filename?: string): string {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  if (!supabaseUrl) return targetUrl;
+
+  const params = new URLSearchParams({ proxy: targetUrl });
+  if (referer) params.set('referer', referer);
+  if (filename) params.set('filename', filename);
+
+  return `${supabaseUrl}/functions/v1/fetch-video?${params.toString()}`;
+}
+
+function isProxyableMediaUrl(url: string): boolean {
+  const lower = url.toLowerCase();
+  return /\.(?:mp4|webm|mov|m4v|avi|mkv|flv|m3u8|mpd|ts|m4s|aac|mp3)(?:\?|$)/i.test(lower)
+    || /(?:phncdn\.com|pornhub\.com|googlevideo\.com|twimg\.com|fbcdn\.net|cdninstagram\.com)/i.test(lower);
+}
+
+function isHlsResource(url: string, contentType?: string | null): boolean {
+  const lower = url.toLowerCase();
+  const ct = (contentType || '').toLowerCase();
+  return /\.m3u8(?:\?|$)/i.test(lower)
+    || ct.includes('mpegurl')
+    || ct.includes('vnd.apple.mpegurl')
+    || ct.includes('x-mpegurl');
+}
+
+function resolveRelativeMediaUrl(rawUrl: string, baseUrl: string): string {
+  if (/^https?:\/\//i.test(rawUrl)) return rawUrl;
+  return new URL(rawUrl, baseUrl).href;
+}
+
+function rewriteHlsPlaylist(manifest: string, manifestUrl: string, referer?: string): string {
+  return manifest
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return line;
+
+      if (trimmed.startsWith('#')) {
+        return line.replace(/URI="([^"]+)"/g, (_match, uri) => {
+          const absoluteUri = resolveRelativeMediaUrl(uri, manifestUrl);
+          return `URI="${buildProxyUrl(absoluteUri, referer)}"`;
+        });
+      }
+
+      const absoluteUri = resolveRelativeMediaUrl(trimmed, manifestUrl);
+      return buildProxyUrl(absoluteUri, referer);
+    })
+    .join('\n');
+}
+
+async function proxyMediaRequest(req: Request, rawTargetUrl: string, referer?: string, filename?: string): Promise<Response> {
+  const targetCheck = validateUrl(rawTargetUrl);
+  if (!targetCheck.valid || !targetCheck.url) {
+    return jsonResponse({ success: false, error: targetCheck.error || 'Invalid proxy target' }, 400);
+  }
+
+  const targetUrl = targetCheck.url.href;
+  if (!isProxyableMediaUrl(targetUrl)) {
+    return jsonResponse({ success: false, error: 'Only media resources can be proxied' }, 400);
+  }
+
+  const upstreamHeaders: Record<string, string> = {
+    'User-Agent': USER_AGENTS[0],
+    'Accept': req.headers.get('accept') || '*/*',
+  };
+
+  if (referer) {
+    const refererCheck = validateUrl(referer);
+    if (refererCheck.valid && refererCheck.url) {
+      upstreamHeaders['Referer'] = refererCheck.url.href;
+      upstreamHeaders['Origin'] = refererCheck.url.origin;
+    }
+  }
+
+  const range = req.headers.get('range');
+  if (range) upstreamHeaders['Range'] = range;
+
+  const upstream = await fetch(targetUrl, {
+    method: req.method,
+    headers: upstreamHeaders,
+    redirect: 'follow',
+    signal: AbortSignal.timeout(30000),
+  });
+
+  const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+  const responseHeaders = new Headers({
+    ...corsHeaders,
+    'Cache-Control': 'no-store',
+    'Access-Control-Expose-Headers': 'content-type, content-length, content-range, accept-ranges, content-disposition',
+  });
+
+  const passThroughHeaders = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified'];
+  for (const headerName of passThroughHeaders) {
+    const value = upstream.headers.get(headerName);
+    if (value) responseHeaders.set(headerName, value);
+  }
+
+  if (filename) {
+    responseHeaders.set('Content-Disposition', `inline; filename="${filename.replace(/[^a-zA-Z0-9._ -]/g, '_')}"`);
+  }
+
+  if (isHlsResource(targetUrl, contentType) && req.method !== 'HEAD') {
+    const playlist = await upstream.text();
+    responseHeaders.set('Content-Type', 'application/vnd.apple.mpegurl');
+    responseHeaders.delete('content-length');
+    return new Response(rewriteHlsPlaylist(playlist, upstream.url || targetUrl, referer), {
+      status: upstream.status,
+      headers: responseHeaders,
+    });
+  }
+
+  return new Response(req.method === 'HEAD' ? null : upstream.body, {
+    status: upstream.status,
+    headers: responseHeaders,
+  });
+}
+
+function extractCookieHeader(response: Response): string | undefined {
+  const headers = response.headers as Headers & { getSetCookie?: () => string[] };
+  const setCookieValues = typeof headers.getSetCookie === 'function'
+    ? headers.getSetCookie()
+    : (() => {
+      const raw = response.headers.get('set-cookie');
+      return raw ? [raw] : [];
+    })();
+
+  const cookiePairs = setCookieValues.flatMap((cookieValue) => {
+    const matches = cookieValue.match(/(?:^|,)\s*[^=;,\s]+=[^;]*/g) || [];
+    return matches.map((match) => match.replace(/^\s*,?\s*/, '').trim());
+  });
+
+  return [...new Set(cookiePairs)].join('; ') || undefined;
+}
+
+function deriveQualityLabel(item: Record<string, unknown>, fallback = 'Direct'): string {
+  const rawQuality = Array.isArray(item.quality)
+    ? item.quality.find((value) => typeof value === 'string' || typeof value === 'number')
+    : item.quality;
+
+  const height = typeof item.height === 'number'
+    ? item.height
+    : typeof item.height === 'string'
+      ? parseInt(item.height, 10)
+      : 0;
+
+  if (typeof rawQuality === 'number' && rawQuality > 0) return `${rawQuality}p`;
+
+  if (typeof rawQuality === 'string' && rawQuality.trim()) {
+    const quality = rawQuality.trim();
+    if (/^\d+$/.test(quality)) return `${quality}p`;
+    if (/\d{3,4}p/i.test(quality)) return quality;
+    return quality;
+  }
+
+  if (height > 0) return `${height}p`;
+  return fallback;
+}
+
+async function resolveRemoteMediaDefinition(endpoint: string, pageUrl: string, cookieHeader?: string): Promise<VideoSource[]> {
+  const headers: Record<string, string> = {
+    'User-Agent': USER_AGENTS[0],
+    'Referer': pageUrl,
+    'Accept': 'application/json,text/plain,*/*',
+    'X-Requested-With': 'XMLHttpRequest',
+  };
+
+  if (cookieHeader) headers['Cookie'] = cookieHeader;
+
+  const response = await fetch(endpoint, {
+    headers,
+    redirect: 'follow',
+    signal: AbortSignal.timeout(8000),
+  });
+
+  if (!response.ok) return [];
+
+  const responseText = await response.text();
+  if (!responseText.trim()) return [];
+
+  const contentType = response.headers.get('content-type') || '';
+  const looksJson = contentType.includes('json') || /^[\[{]/.test(responseText.trim());
+  if (!looksJson) return [];
+
+  const responseData = JSON.parse(responseText);
+  const items = Array.isArray(responseData)
+    ? responseData
+    : Array.isArray(responseData?.mediaDefinitions)
+      ? responseData.mediaDefinitions
+      : [];
+
+  return items.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const rawUrl = typeof item.videoUrl === 'string' ? normalizeExtractedUrl(item.videoUrl) : '';
+    if (!rawUrl) return [];
+
+    const format = guessFormat(typeof item.format === 'string' ? item.format : '', rawUrl);
+    const quality = deriveQualityLabel(item as Record<string, unknown>, 'Direct');
+    const size = typeof item.videoSize === 'number' ? formatBytes(item.videoSize) : undefined;
+
+    return [{
+      url: rawUrl,
+      quality,
+      format,
+      size,
+      type: 'combined',
+    }];
+  });
+}
+
+function isDirectFileSource(source: VideoSource): boolean {
+  const lower = source.url.toLowerCase();
+  return source.format !== 'hls'
+    && source.format !== 'dash'
+    && !/\.(?:m3u8|mpd)(?:\?|$)/i.test(lower);
+}
+
+function preferDirectFileSources(sources: VideoSource[]): VideoSource[] {
+  const directQualityKeys = new Set(
+    sources
+      .filter(isDirectFileSource)
+      .map((source) => `${source.type || 'video'}:${parseQualityScore(source.quality) || source.quality || 'unknown'}`),
+  );
+
+  return sources.filter((source) => {
+    if (isDirectFileSource(source)) return true;
+    const qualityKey = `${source.type || 'video'}:${parseQualityScore(source.quality) || source.quality || 'unknown'}`;
+    return !directQualityKeys.has(qualityKey);
+  });
+}
+
+function shouldProxySource(source: VideoSource): boolean {
+  const lower = source.url.toLowerCase();
+  if (/\/functions\/v1\/fetch-video\?/i.test(lower)) return false;
+  return source.format === 'hls'
+    || /\.m3u8(?:\?|$)/i.test(lower)
+    || /(?:phncdn\.com|pornhub\.com)/i.test(lower);
+}
+
+function toClientFacingSource(source: VideoSource, referer?: string): VideoSource {
+  if (!shouldProxySource(source)) return source;
+  return {
+    ...source,
+    url: buildProxyUrl(source.url, referer, generateFilename('video', source)),
+  };
 }
 
 function isYouTube(url: string): boolean { return /(?:youtube\.com|youtu\.be|youtube-nocookie\.com)/i.test(url); }
@@ -1644,6 +1924,7 @@ async function tryAdultSite(url: string, pageData: PageData): Promise<Record<str
     if (!res.ok) return null;
     const html = await res.text();
     const sources: VideoSource[] = [];
+    const cookieHeader = extractCookieHeader(res);
 
     // These sites typically expose video URLs in specific patterns
     // 1. html5player.setVideoUrl patterns (xvideos, xnxx)
@@ -1679,28 +1960,14 @@ async function tryAdultSite(url: string, pageData: PageData): Promise<Record<str
               } else if (md.format === 'mp4' || !md.videoUrl.includes('.m3u8')) {
                 // Check if videoUrl is a JSON endpoint that returns actual video URLs
                 try {
-                  const mdRes = await fetch(md.videoUrl, {
-                    headers: { 'User-Agent': USER_AGENTS[0], 'Referer': url },
-                    signal: AbortSignal.timeout(5000),
-                    redirect: 'follow',
-                  });
-                  const ct = mdRes.headers.get('content-type') || '';
-                  if (ct.includes('json')) {
-                    const mdData = await mdRes.json();
-                    if (Array.isArray(mdData)) {
-                      for (const item of mdData) {
-                        if (item.videoUrl && typeof item.videoUrl === 'string' && !item.videoUrl.includes('.m3u8')) {
-                          sources.push({ url: item.videoUrl, quality: item.quality ? `${item.quality}p` : 'Direct', format: 'mp4', type: 'combined' });
-                        } else if (item.videoUrl && item.videoUrl.includes('.m3u8')) {
-                          sources.push({ url: item.videoUrl, quality: item.quality ? `${item.quality}p` : 'Auto (HLS)', format: 'hls', type: 'combined' });
-                        }
-                      }
-                    }
+                  const remoteSources = await resolveRemoteMediaDefinition(md.videoUrl, url, cookieHeader);
+                  if (remoteSources.length > 0) {
+                    sources.push(...remoteSources);
                   } else {
-                    sources.push({ url: md.videoUrl, quality: md.quality ? `${md.quality}p` : 'Auto', format: md.format || 'mp4', type: 'combined' });
+                    sources.push({ url: md.videoUrl, quality: deriveQualityLabel(md, 'Auto'), format: md.format || 'mp4', type: 'combined' });
                   }
                 } catch {
-                  sources.push({ url: md.videoUrl, quality: md.quality ? `${md.quality}p` : 'Auto', format: md.format || 'mp4', type: 'combined' });
+                  sources.push({ url: md.videoUrl, quality: deriveQualityLabel(md, 'Auto'), format: md.format || 'mp4', type: 'combined' });
                 }
               }
             }
@@ -1726,7 +1993,7 @@ async function tryAdultSite(url: string, pageData: PageData): Promise<Record<str
 
     const meta = extractMetadata(html, url);
     const filtered = filterAdSources(mergeUniqueSources(sources));
-    if (filtered.length > 0) return await buildPickerResult(filtered, meta);
+    if (filtered.length > 0) return await buildPickerResult(filtered, meta, url);
   } catch (e) { console.log('Adult site extraction failed:', e); }
 
   return null;
@@ -2340,10 +2607,11 @@ async function resolveHlsManifest(m3u8Url: string, referer?: string): Promise<Vi
         }
         
         const quality = height ? `${height}p` : (bandwidth > 2000000 ? 'HD' : 'SD');
+        const format = guessFormat('', streamUrl);
         sources.push({
           url: streamUrl,
           quality,
-          format: 'mp4',
+          format,
           type: 'combined',
           size: bandwidth ? `${Math.round(bandwidth / 1000)}kbps` : undefined,
         });
@@ -2419,11 +2687,12 @@ function sortSourcesByQuality(sources: VideoSource[]): VideoSource[] {
   });
 }
 
-async function buildPickerResult(sources: VideoSource[], metadata: Record<string, string>): Promise<Record<string, unknown>> {
+async function buildPickerResult(sources: VideoSource[], metadata: Record<string, string>, sourcePageUrl?: string): Promise<Record<string, unknown>> {
   const unique = mergeUniqueSources(sources);
   // Resolve any HLS/M3U8 sources to their variant streams
   const resolved = await resolveAllHlsSources(filterAdSources(unique));
-  const filtered = sortSourcesByQuality(resolved);
+  const preferred = preferDirectFileSources(resolved);
+  const filtered = sortSourcesByQuality(preferred).map((source) => toClientFacingSource(source, sourcePageUrl));
   if (filtered.length === 0) return { success: true, type: 'metadata_only', metadata, videoSources: [] };
 
   return {
