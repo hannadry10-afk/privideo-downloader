@@ -2,7 +2,9 @@
 
 # 🎬 Incognito Zone – Video Downloader
 
-**A fast, privacy-first video downloader built with React & Supabase Edge Functions**
+**A free, open-source video downloader built with React & Supabase Edge Functions**
+
+🌐 **Live Site:** https://incognito-zone.xyz — 100% Free, No Signup Required
 
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=white)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -27,6 +29,7 @@
 - 📱 **Responsive Design** — Works seamlessly on desktop and mobile
 - 🔒 **Privacy First** — No tracking, no stored downloads, no user data retained
 - 🌙 **Clean UI** — Built with shadcn/ui components and Tailwind CSS
+- 🆓 **100% Free & Open Source** — No premium tiers, no hidden fees, forever
 
 ---
 
