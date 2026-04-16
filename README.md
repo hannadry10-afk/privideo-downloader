@@ -1,17 +1,17 @@
 <div align="center">
 
-# 🎬 Privideo Downloader
+# 🎬 Incognito Zone – Video Downloader
 
 **A fast, privacy-first video downloader built with React & Supabase Edge Functions**
 
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=white)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Vite](https://img.shields.io/badge/Vite-7-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Vite](https://img.shields.io/badge/Vite-6-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Supabase](https://img.shields.io/badge/Supabase-Edge_Functions-3ECF8E?style=flat-square&logo=supabase&logoColor=white)](https://supabase.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
-[Features](#-features) • [Tech Stack](#-tech-stack) • [Getting Started](#-getting-started) • [Project Structure](#-project-structure) • [Deployment](#-deployment) • [Contributing](#-contributing)
+[Live Site](https://incognito-zone.xyz) • [Features](#-features) • [Tech Stack](#-tech-stack) • [Getting Started](#-getting-started) • [Project Structure](#-project-structure) • [Deployment](#-deployment) • [Contributing](#-contributing)
 
 ---
 
@@ -35,10 +35,11 @@
 | Layer | Technology |
 |---|---|
 | **Frontend** | React 18 + TypeScript |
-| **Build Tool** | Vite 7 |
+| **Build Tool** | Vite 6 |
 | **Styling** | Tailwind CSS + shadcn/ui |
 | **Backend** | Supabase Edge Functions (Deno) |
 | **Database/Auth** | Supabase |
+| **Hosting** | Vercel |
 | **Package Manager** | npm |
 
 ---
@@ -143,13 +144,28 @@ privideo-downloader/
 
 ## ☁️ Deployment
 
-### Deploy via Lovable
+### Deploy to Vercel
 
-The easiest way to deploy is through [Lovable](https://lovable.dev):
+The recommended way to deploy is through Vercel:
 
-1. Open your Lovable project
-2. Click **Share → Publish**
-3. Your app is live instantly
+1. Push your code to GitHub
+2. Import the project in [Vercel Dashboard](https://vercel.com/dashboard)
+3. Add your environment variables:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY`
+   - `VITE_SUPABASE_PROJECT_ID`
+4. Deploy!
+
+Or use the Vercel CLI:
+
+```bash
+# Install Vercel CLI
+npm install -g vercel
+
+# Login and deploy
+vercel login
+vercel --prod
+```
 
 ### Deploy Supabase Edge Functions
 
@@ -167,10 +183,11 @@ supabase functions deploy fetch-video
 
 ### Custom Domain
 
-To connect a custom domain, go to:
-**Lovable Project → Settings → Domains → Connect Domain**
+To connect a custom domain:
 
-See the [custom domain docs](https://docs.lovable.dev/features/custom-domain) for details.
+1. Go to your Vercel project settings
+2. Navigate to **Domains**
+3. Add your domain and follow the DNS instructions
 
 ---
 
@@ -213,7 +230,7 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
 
 <div align="center">
 
-Made with ❤️ using [React](https://reactjs.org/), [Supabase](https://supabase.com/), and [Lovable](https://lovable.dev/)
+Made with ❤️ using [React](https://reactjs.org/) and [Supabase](https://supabase.com/)
 
 ⭐ Star this repo if you found it useful!
 
