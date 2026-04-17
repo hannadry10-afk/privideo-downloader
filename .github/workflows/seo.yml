@@ -1,0 +1,38 @@
+name: SEO & Search Engine Submission
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  seo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Submit sitemap to Google
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            "https://www.google.com/ping?sitemap=https://incognito-zone.xyz/sitemap.xml"
+
+      - name: Submit sitemap to Bing
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            "https://www.bing.com/ping?sitemap=https://incognito-zone.xyz/sitemap.xml"
+
+      - name: Submit sitemap to Yandex
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            "https://webmaster.yandex.com/ping/sitemap/?sitemap=https://incognito-zone.xyz/sitemap.xml"
+
+      - name: Verify sitemap is accessible
+        run: |
+          SITEMAP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://incognito-zone.xyz/sitemap.xml")
+          echo "Sitemap HTTP Status: $SITEMAP_STATUS"
+          if [ "$SITEMAP_STATUS" != "200" ]; then
+            exit 1
+          fi
+
+      - name: Verify robots.txt is accessible
+        run: |
+          ROBOTS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://incognito-zone.xyz/robots.txt")
+          echo "Robots.txt HTTP Status: $ROBOTS_STATUS"
