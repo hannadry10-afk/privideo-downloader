@@ -1,14 +1,4 @@
 User-agent: *
 Allow: /
-Disallow: /watch/
 
-Sitemap: https://www.incognito-zone.xyz/sitemap.xml
-
-# Crawl optimization
-User-agent: Googlebot
-Allow: /
-Crawl-delay: 1
-
-User-agent: Bingbot
-Allow: /
-Crawl-delay: 2
+Sitemap: https://incognito-zone.xyz/sitemap.xml
